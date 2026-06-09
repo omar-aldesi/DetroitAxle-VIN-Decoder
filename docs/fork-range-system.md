@@ -1,7 +1,11 @@
 # Build-Number Fork / Range System — Design
 
-Status: **planning** (no code yet). Branch: `fork-system`.
-Scope of this document: **server side only.** Frontend is a later, separate document.
+Status: **backend complete** (Phases 1–4); **frontend in progress** (DNR + Vehicle pages).
+Branch: `fork-system`.
+
+**Frontend surfaces:**
+- **DNR workspace** — `BuildNumberPanel` in [ui/src/pages/DNRPage.jsx](../ui/src/pages/DNRPage.jsx): per-VIN sightings (`POST /api/fork/:vin/point`) and manual ranges (`POST /api/fork/:vin/range`).
+- **Vehicle page** — `BuildNumberSpecs` in [ui/src/pages/VehiclePage.jsx](../ui/src/pages/VehiclePage.jsx): read-only resolve + expandable ranges; trusted agents/DNR/admin can record per-VIN sightings when a full 17-char VIN is active. Manual ranges remain DNR-only.
 
 ---
 
@@ -360,7 +364,11 @@ Nothing *verified* is lost, nothing *unverified* enters, reversible.
   - **Deferred:** admin legacy-column backfill (needs the verified-only vs. import-all
     policy decided) and admin "rebuild ranges".
 - **Phase 5 — Reconciliation worker** (later) — scans split conflicts, offline rebuild.
-- **Frontend** — separate document, after the server phases land.
+- **Frontend — in progress.**
+  - DNR `BuildNumberPanel`: point + range entry, pending/range display.
+  - Vehicle `BuildNumberSpecs`: VIN resolve, confidence tags, trusted per-VIN edit.
+  - `NoteCard`: "Check VIN" scope badge (Phase 3).
+  - **Deferred:** admin legacy-column backfill UI, fork-aware DNR queue completeness stats.
 
 ---
 

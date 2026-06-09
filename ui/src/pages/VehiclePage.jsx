@@ -29,7 +29,7 @@ import {
   Info,
 } from "lucide-react";
 import { getVehicle, updateVehicle, fetchGMLive } from "../api/vehicles";
-import { getForkData } from "../api/fork";
+import { getForkData, recordForkPoint } from "../api/fork";
 import { copyText } from "../utils/clipboard";
 import { useToast } from "../contexts/ToastContext";
 import ThemeToggle from "../components/ThemeToggle";
@@ -325,11 +325,22 @@ function SpecSection({ section, vehicle, vin, expandAll }) {
         <span className="section-title">
           <Icon className={`w-4 h-4 ${iconCls}`} />
           {label}
-          {/* Completeness badge */}
-          <span
-            className={`ml-1.5 text-[10px] font-mono tabular-nums ${allFilled ? "text-success/60" : "text-txt-muted/40"}`}
-          >
-            {filled}/{fields.length}
+          {/* Completeness bar */}
+          <span className="ml-2 flex items-center gap-1 shrink-0">
+            <span className="flex gap-px">
+              {fields.map((_, i) => (
+                <span
+                  key={i}
+                  className={`w-1 h-2.5 rounded-sm transition-colors ${
+                    i < filled
+                      ? allFilled
+                        ? "bg-success/50"
+                        : "bg-accent/40"
+                      : "bg-border-subtle"
+                  }`}
+                />
+              ))}
+            </span>
           </span>
         </span>
         {open ? (
@@ -516,8 +527,16 @@ function CustomFieldsSection({ customFields, vin }) {
 const GM_WMI2 = ["1G", "2G", "3G"];
 const GM_WMI3 = ["KL4", "KL8", "KL1", "W0L"];
 const GM_MAKES = new Set([
-  "chevrolet", "gmc", "buick", "cadillac",
-  "pontiac", "saturn", "oldsmobile", "hummer", "opel", "vauxhall",
+  "chevrolet",
+  "gmc",
+  "buick",
+  "cadillac",
+  "pontiac",
+  "saturn",
+  "oldsmobile",
+  "hummer",
+  "opel",
+  "vauxhall",
 ]);
 
 function isGMVehicle(vehicle) {
@@ -534,7 +553,10 @@ function isGMVehicle(vehicle) {
 // Also strips a trailing dash/space left over from codes like "PACKAGE OPTION-".
 function formatGMText(raw) {
   return String(raw)
-    .replace(/[A-Za-z]+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .replace(
+      /[A-Za-z]+/g,
+      (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(),
+    )
     .replace(/[\s-]+$/, "")
     .trim();
 }
@@ -679,7 +701,9 @@ function GMLiveSection({ vehicle }) {
       setData(res.data);
       hasFetched.current = true;
     } catch (e) {
-      setErr(e?.response?.data?.error ?? e?.message ?? "Failed to fetch GM data");
+      setErr(
+        e?.response?.data?.error ?? e?.message ?? "Failed to fetch GM data",
+      );
       hasFetched.current = true;
     } finally {
       setLoading(false);
@@ -689,7 +713,11 @@ function GMLiveSection({ vehicle }) {
   // Auto-fetch on page load for GM cars — the user shouldn't have to press
   // anything; GM's per-VIN data should be on screen as soon as the page opens.
   useEffect(() => {
-    if (isGM && !hasFetched.current && (vehicle.example_build_number ?? "").length === 17) {
+    if (
+      isGM &&
+      !hasFetched.current &&
+      (vehicle.example_build_number ?? "").length === 17
+    ) {
       doFetch(vehicle.example_build_number);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -702,7 +730,10 @@ function GMLiveSection({ vehicle }) {
   return (
     <div className="section-card animate-fade-in">
       {/* Header */}
-      <button onClick={toggle} className="w-full flex items-center justify-between">
+      <button
+        onClick={toggle}
+        className="w-full flex items-center justify-between"
+      >
         <span className="section-title">
           <Car className="w-4 h-4 text-blue-400" />
           GM Build Options
@@ -710,9 +741,11 @@ function GMLiveSection({ vehicle }) {
             live
           </span>
         </span>
-        {open
-          ? <ChevronUp className="w-4 h-4 text-txt-muted" />
-          : <ChevronDown className="w-4 h-4 text-txt-muted" />}
+        {open ? (
+          <ChevronUp className="w-4 h-4 text-txt-muted" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-txt-muted" />
+        )}
       </button>
 
       {open && (
@@ -723,7 +756,10 @@ function GMLiveSection({ vehicle }) {
               value={vinInput}
               onChange={(e) =>
                 setVinInput(
-                  e.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 17),
+                  e.target.value
+                    .replace(/[^a-zA-Z0-9]/g, "")
+                    .toUpperCase()
+                    .slice(0, 17),
                 )
               }
               onKeyDown={(e) => e.key === "Enter" && doFetch()}
@@ -735,17 +771,19 @@ function GMLiveSection({ vehicle }) {
               disabled={loading || vinInput.length !== 17}
               className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all"
             >
-              {loading
-                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                : <Search className="w-3.5 h-3.5" />}
+              {loading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Search className="w-3.5 h-3.5" />
+              )}
               Look Up
             </button>
           </div>
 
           <p className="text-[10px] text-txt-muted/60 mb-3 leading-relaxed">
-            RPO codes are specific to each individual VIN off the assembly line —
-            this data is fetched live and is not saved. Two vehicles of the same
-            model may carry different options.
+            RPO codes are specific to each individual VIN off the assembly line
+            — this data is fetched live and is not saved. Two vehicles of the
+            same model may carry different options.
           </p>
 
           {/* States */}
@@ -767,7 +805,8 @@ function GMLiveSection({ vehicle }) {
 
           {!data && !loading && !err && (
             <p className="text-xs text-txt-muted/50 text-center py-6">
-              Enter a full 17-character VIN and click Look Up to see build options.
+              Enter a full 17-character VIN and click Look Up to see build
+              options.
             </p>
           )}
         </div>
@@ -781,113 +820,243 @@ function padSerial(s) {
   return String(s ?? "").padStart(6, "0");
 }
 
+function forkOutcomeMsg(o) {
+  switch (o) {
+    case "pending":
+      return "Sighting saved — one more matching VIN confirms the range.";
+    case "range_created":
+      return "Range confirmed from two matching VINs!";
+    case "reinforced":
+      return "Confirmed — strengthened the existing range.";
+    case "forked":
+      return "New range created.";
+    default:
+      return "Saved.";
+  }
+}
+
 function ConfidenceTag({ tier }) {
   const c = FORK_CONFIDENCE[tier];
   if (!c) return null;
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] font-semibold shrink-0"
-      style={{ color: c.color }}
+      className="inline-flex items-center gap-1 text-[10px] font-semibold shrink-0 px-1.5 py-0.5 rounded-md"
+      style={{
+        color: c.color,
+        background: `${c.color}18`,
+        border: `1px solid ${c.color}30`,
+      }}
       title={c.desc}
     >
       <span
-        className="w-1.5 h-1.5 rounded-full"
-        style={{ backgroundColor: c.color }}
+        className="w-1 h-1 rounded-full shrink-0"
+        style={{ background: c.color }}
       />
       {c.label}
     </span>
   );
 }
 
-function ForkFieldRow({ field, resolved, columnVal, ranges, pending, hasSerial }) {
+function ForkFieldRow({
+  field,
+  resolved,
+  columnVal,
+  ranges,
+  pending,
+  hasSerial,
+  canEdit,
+  activeVin,
+  onSaved,
+}) {
+  const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
   const list = ranges ?? [];
-  const value = resolved?.value ?? null;
+  const value = resolved?.Value ?? null;
   const fallback = !value && columnVal ? String(columnVal) : null;
+  const display = value ?? fallback;
   const pendingCount = pending?.length ?? 0;
   const expandable = list.length > 0 || pendingCount > 0;
 
+  const pointMut = useMutation({
+    mutationFn: (v) =>
+      recordForkPoint(activeVin, {
+        field_key: field.key,
+        value: v,
+      }).then((r) => r.data),
+    onSuccess: (d) => {
+      toast(forkOutcomeMsg(d?.outcome), "success");
+      setEditing(false);
+      onSaved?.();
+    },
+    onError: (e) =>
+      toast(e.response?.data?.error ?? "Could not save", "error"),
+  });
+
+  const openEdit = () => {
+    setDraft(display ?? "");
+    setEditing(true);
+  };
+  const save = () => {
+    if (!draft.trim()) return;
+    if (draft.trim() === (display ?? "")) {
+      setEditing(false);
+      return;
+    }
+    pointMut.mutate(draft.trim());
+  };
+
   return (
-    <div className="border-b border-border-subtle/40 last:border-0">
-      <div className="flex items-center gap-3 py-2.5">
+    <div className="border-b border-border-subtle/30 last:border-0 group">
+      {/* Main row */}
+      <div className="flex items-center gap-3 px-3 py-2.5">
         <span className="spec-label shrink-0 w-28">{field.label}</span>
-        <div className="flex-1 min-w-0 flex items-center justify-end gap-2.5">
-          {value ? (
+        <div className="flex-1 min-w-0 flex items-center justify-end gap-2">
+          {editing ? (
+            <>
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") save();
+                  if (e.key === "Escape") setEditing(false);
+                }}
+                className={`bg-bg-elevated border border-accent/40 rounded-lg px-2.5 py-1 text-sm text-txt-primary w-32 focus:outline-none focus:border-accent transition-all text-right ${
+                  field.mono ? "font-mono tracking-wider" : ""
+                }`}
+              />
+              <button
+                onClick={save}
+                disabled={pointMut.isPending || !draft.trim()}
+                className="text-success hover:opacity-75 transition-opacity"
+              >
+                {pointMut.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+              </button>
+              <button
+                onClick={() => setEditing(false)}
+                className="text-txt-muted hover:text-txt-secondary transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </>
+          ) : value ? (
             <>
               <span
-                className={`text-sm font-medium text-txt-primary text-right truncate ${field.mono ? "font-mono" : ""}`}
+                className={`text-sm font-semibold text-txt-primary text-right truncate ${
+                  field.mono ? "font-mono tracking-wider" : ""
+                }`}
               >
                 {value}
               </span>
-              <ConfidenceTag tier={resolved.confidence} />
+              <ConfidenceTag tier={resolved.Confidence} />
             </>
           ) : fallback ? (
             <>
               <span
-                className={`text-sm font-medium text-txt-secondary text-right truncate ${field.mono ? "font-mono" : ""}`}
+                className={`text-sm font-medium text-txt-secondary text-right truncate ${
+                  field.mono ? "font-mono tracking-wider" : ""
+                }`}
               >
                 {fallback}
               </span>
               <span
-                className="text-[10px] font-semibold text-txt-muted/70 shrink-0"
+                className="text-[10px] font-medium text-txt-muted/50 shrink-0 italic"
                 title="Stored value — not yet confirmed as a build-number range"
               >
                 unverified
               </span>
             </>
           ) : (
-            <span className="text-sm text-txt-muted/40">—</span>
+            <span className="text-xs text-txt-muted/25 font-mono select-none">
+              —
+            </span>
           )}
-          {expandable ? (
+          {!editing && canEdit && (
             <button
-              onClick={() => setOpen((v) => !v)}
-              className="text-txt-muted hover:text-txt-primary shrink-0"
-              title={`${list.length} range${list.length !== 1 ? "s" : ""}`}
+              onClick={openEdit}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-txt-muted hover:text-accent shrink-0"
+              title={`Record ${field.label} for this VIN`}
             >
-              {open ? (
-                <ChevronUp className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronDown className="w-3.5 h-3.5" />
-              )}
+              <Edit3 className="w-3 h-3" />
             </button>
-          ) : (
-            <span className="w-3.5 shrink-0" />
           )}
+          {!editing &&
+            (expandable ? (
+              <button
+                onClick={() => setOpen((v) => !v)}
+                className="flex items-center gap-1 ml-1 text-txt-muted hover:text-txt-primary transition-colors shrink-0"
+                title={`${list.length} range${list.length !== 1 ? "s" : ""}`}
+              >
+                {list.length > 1 && (
+                  <span className="text-[9px] font-mono tabular-nums text-txt-muted/40">
+                    {list.length}
+                  </span>
+                )}
+                {open ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+            ) : (
+              <span className="w-3.5 shrink-0" />
+            ))}
         </div>
       </div>
 
+      {/* Expanded ranges — indented under the label column */}
       {open && (
-        <div className="pb-3 pl-1 space-y-1.5 animate-fade-in">
+        <div className="mb-2.5 ml-[calc(7rem+0.75rem)] pl-3 border-l-2 border-border-subtle/60 space-y-1.5 animate-fade-in">
           {list.length > 0 ? (
             list.map((r, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="font-mono text-[11px] text-txt-muted tabular-nums shrink-0">
-                  {padSerial(r.serial_start)}–
-                  {r.serial_end != null ? padSerial(r.serial_end) : "end"}
+              <div key={i} className="flex items-center gap-2.5 py-0.5">
+                <span className="font-mono text-[10px] text-txt-muted/60 tabular-nums shrink-0 tracking-tight">
+                  #{padSerial(r.SerialStart)}
+                  {" → "}
+                  {r.SerialEnd != null ? `#${padSerial(r.SerialEnd)}` : "∞"}
                 </span>
                 <span
-                  className={`font-medium text-txt-secondary truncate ${field.mono ? "font-mono" : ""}`}
+                  className={`text-xs font-medium text-txt-secondary ${
+                    field.mono ? "font-mono tracking-wide" : ""
+                  }`}
                 >
-                  {r.value}
+                  {r.Value}
                 </span>
-                <span className="ml-auto shrink-0">
-                  <ConfidenceTag
-                    tier={r.origin === "manual" ? "manual" : "observed"}
-                  />
-                </span>
+                {r.Observations > 1 && (
+                  <span className="ml-auto text-[9px] font-mono text-txt-muted/35 tabular-nums shrink-0">
+                    &times;{r.Observations}
+                  </span>
+                )}
               </div>
             ))
           ) : (
-            <p className="text-[11px] text-txt-muted/60">
-              No confirmed ranges yet.
+            <p className="text-[11px] text-txt-muted/40 py-1 italic">
+              No confirmed ranges.
             </p>
           )}
           {pendingCount > 0 && (
-            <p className="text-[10px] text-amber-500/80 flex items-center gap-1">
-              <Info className="w-3 h-3 shrink-0" />
-              {pendingCount} unconfirmed sighting{pendingCount !== 1 ? "s" : ""}{" "}
-              — needs a matching VIN to form a range
-            </p>
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                style={{
+                  color: "#f59e0b",
+                  background: "#f59e0b12",
+                  border: "1px solid #f59e0b28",
+                }}
+              >
+                <Info className="w-2.5 h-2.5 shrink-0" />
+                {pendingCount} pending
+              </span>
+              <span className="text-[10px] text-txt-muted/40">
+                needs a matching VIN
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -896,9 +1065,13 @@ function ForkFieldRow({ field, resolved, columnVal, ranges, pending, hasSerial }
 }
 
 function BuildNumberSpecs({ vehicle }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
   const [open, setOpen] = useState(true);
   const [vinInput, setVinInput] = useState(vehicle.example_build_number ?? "");
-  const [activeVin, setActiveVin] = useState(vehicle.example_build_number ?? "");
+  const [activeVin, setActiveVin] = useState(
+    vehicle.example_build_number ?? "",
+  );
 
   const lookupKey = activeVin || vehicle.build_key;
   const { data, isLoading, isError } = useQuery({
@@ -908,6 +1081,13 @@ function BuildNumberSpecs({ vehicle }) {
     retry: false,
     refetchOnWindowFocus: false,
   });
+
+  /* Trusted agents record per-VIN sightings here; manual ranges stay DNR-only. */
+  const canEditFork =
+    (user?.isTrusted || user?.isDNR || user?.isAdmin) &&
+    activeVin.trim().length === 17;
+  const refetchFork = () =>
+    qc.invalidateQueries({ queryKey: ["fork", lookupKey] });
 
   const resolved = data?.resolved ?? {};
   const fields = data?.fields ?? {};
@@ -920,13 +1100,19 @@ function BuildNumberSpecs({ vehicle }) {
     if (v.length === 17 || v.length === 10) setActiveVin(v);
   };
 
+  const resolvedCount = FORK_FIELDS.filter(
+    (f) => resolved[f.key]?.Value,
+  ).length;
   const anyData = FORK_FIELDS.some(
     (f) =>
-      resolved[f.key]?.value || vehicle[f.key] || (fields[f.key]?.length ?? 0),
+      resolved[f.key]?.Value || vehicle[f.key] || (fields[f.key]?.length ?? 0),
   );
+  const vinLen = vinInput.length;
+  const vinReady = vinLen === 17 || vinLen === 10;
 
   return (
     <div className="section-card animate-fade-in">
+      {/* Header */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between"
@@ -934,6 +1120,11 @@ function BuildNumberSpecs({ vehicle }) {
         <span className="section-title">
           <GitBranch className="w-4 h-4 text-emerald-400" />
           Build-Number Specs
+          {resolvedCount > 0 && (
+            <span className="ml-1.5 text-[10px] font-mono tabular-nums text-emerald-400/70">
+              {resolvedCount}/{FORK_FIELDS.length}
+            </span>
+          )}
         </span>
         {open ? (
           <ChevronUp className="w-4 h-4 text-txt-muted" />
@@ -943,71 +1134,91 @@ function BuildNumberSpecs({ vehicle }) {
       </button>
 
       {open && (
-        <div className="mt-3">
-          {/* What this is */}
-          <div className="flex items-start gap-2 bg-emerald-500/[0.06] border border-emerald-500/15 rounded-xl px-3 py-2 mb-3">
-            <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-txt-secondary leading-relaxed">
-              These can differ between individual VINs in this group — showing
-              the values for the build number below.
-            </p>
-          </div>
-
-          {/* VIN selector */}
-          <div className="flex gap-2 mb-2">
-            <div className="relative flex-1">
-              <Fingerprint className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-txt-muted pointer-events-none" />
-              <input
-                value={vinInput}
-                onChange={(e) =>
-                  setVinInput(
-                    e.target.value
-                      .replace(/[^a-zA-Z0-9]/g, "")
-                      .toUpperCase()
-                      .slice(0, 17),
-                  )
-                }
-                onKeyDown={(e) => e.key === "Enter" && applyVin()}
-                placeholder="Enter a VIN to check…"
-                className="w-full bg-bg-elevated border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none focus:border-accent/60 transition-all"
-              />
+        <div className="mt-3 space-y-3">
+          {/* VIN input + serial context */}
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Fingerprint className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-txt-muted pointer-events-none" />
+                <input
+                  value={vinInput}
+                  onChange={(e) =>
+                    setVinInput(
+                      e.target.value
+                        .replace(/[^a-zA-Z0-9]/g, "")
+                        .toUpperCase()
+                        .slice(0, 17),
+                    )
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && applyVin()}
+                  placeholder="Enter a VIN to check…"
+                  className="w-full bg-bg-elevated border border-border-subtle rounded-lg pl-8 pr-10 py-1.5 text-xs font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none focus:border-accent/60 transition-all"
+                />
+                {vinLen > 0 && (
+                  <span
+                    className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-mono tabular-nums transition-colors pointer-events-none ${
+                      vinReady ? "text-emerald-400/80" : "text-txt-muted/35"
+                    }`}
+                  >
+                    {vinLen}/17
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={applyVin}
+                disabled={!vinReady}
+                className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                Check
+              </button>
             </div>
-            <button
-              onClick={applyVin}
-              disabled={vinInput.length !== 17 && vinInput.length !== 10}
-              className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            >
-              Check
-            </button>
+
+            {/* Serial badge or hint */}
+            {hasSerial ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className="inline-flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-md"
+                  style={{
+                    color: "#34d399",
+                    background: "#34d39912",
+                    border: "1px solid #34d39928",
+                  }}
+                >
+                  <span
+                    className="text-[9px] font-sans uppercase tracking-wider"
+                    style={{ color: "#34d39980" }}
+                  >
+                    Build
+                  </span>
+                  #{padSerial(serial)}
+                </span>
+                <span className="text-[10px] text-txt-muted/50">
+                  resolved for this VIN
+                </span>
+              </div>
+            ) : (
+              <p className="text-[10px] text-txt-muted/50 flex items-center gap-1">
+                <Info className="w-3 h-3 shrink-0 text-amber-500/60" />
+                Enter a 17-char VIN to see values for that specific build
+                number.
+              </p>
+            )}
           </div>
 
-          {hasSerial ? (
-            <p className="text-[10px] text-txt-muted mb-2.5">
-              Showing build number{" "}
-              <span className="font-mono text-txt-secondary">
-                {padSerial(serial)}
-              </span>
-            </p>
-          ) : (
-            <p className="text-[10px] text-amber-500/80 mb-2.5 flex items-center gap-1">
-              <Info className="w-3 h-3 shrink-0" />
-              Enter a full 17-char VIN to resolve values for a specific build
-              number.
-            </p>
-          )}
-
+          {/* Field rows */}
           {isLoading ? (
             <div className="flex items-center justify-center py-6 gap-2 text-txt-muted text-xs">
               <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
               Loading…
             </div>
           ) : isError ? (
-            <p className="text-xs text-txt-muted/60 text-center py-4">
+            <div className="flex items-center gap-2 py-3 text-xs text-txt-muted/60">
+              <AlertCircle className="w-4 h-4 shrink-0 text-danger/50" />
               Couldn't load build-number data.
-            </p>
+            </div>
           ) : (
             <>
-              <div>
+              <div className="rounded-xl overflow-hidden border border-border-subtle/50">
                 {FORK_FIELDS.map((f) => (
                   <ForkFieldRow
                     key={f.key}
@@ -1017,28 +1228,42 @@ function BuildNumberSpecs({ vehicle }) {
                     ranges={fields[f.key]}
                     pending={pending[f.key]}
                     hasSerial={hasSerial}
+                    canEdit={canEditFork}
+                    activeVin={activeVin.trim().toUpperCase()}
+                    onSaved={refetchFork}
                   />
                 ))}
               </div>
               {!anyData && (
-                <p className="text-[11px] text-txt-muted/60 text-center pt-3">
-                  No build-number data yet — add it from the DNR page.
-                </p>
+                <div className="py-6 text-center">
+                  <GitBranch className="w-6 h-6 text-txt-muted/15 mx-auto mb-2" />
+                  <p className="text-xs text-txt-muted/40">
+                    No build-number data yet
+                  </p>
+                  <p className="text-[10px] text-txt-muted/25 mt-0.5">
+                    Add it from the DNR page.
+                  </p>
+                </div>
               )}
             </>
           )}
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 pt-2.5 border-t border-border-subtle/40">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 pt-2 border-t border-border-subtle/30">
             {Object.entries(FORK_CONFIDENCE).map(([k, c]) => (
               <span
                 key={k}
-                className="inline-flex items-center gap-1 text-[9px] text-txt-muted"
+                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                style={{
+                  color: c.color,
+                  background: `${c.color}12`,
+                  border: `1px solid ${c.color}25`,
+                }}
                 title={c.desc}
               >
                 <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: c.color }}
+                  className="w-1 h-1 rounded-full shrink-0"
+                  style={{ background: c.color }}
                 />
                 {c.label}
               </span>
