@@ -25,8 +25,11 @@ import {
   ChevronsUpDown,
   ShieldCheck,
   Search,
+  GitBranch,
+  Info,
 } from "lucide-react";
 import { getVehicle, updateVehicle, fetchGMLive } from "../api/vehicles";
+import { getForkData } from "../api/fork";
 import { copyText } from "../utils/clipboard";
 import { useToast } from "../contexts/ToastContext";
 import ThemeToggle from "../components/ThemeToggle";
@@ -98,41 +101,46 @@ const SPEC_SECTIONS = [
         jsonKey: "rear_brake_type",
         col: "rear_brake_type",
       },
-      { label: "Brake Code", jsonKey: "brake_code", col: "brake_code" },
-      {
-        label: "Front Rotor",
-        jsonKey: "front_rotor_size",
-        col: "front_rotor_size",
-      },
-      {
-        label: "Rear Rotor",
-        jsonKey: "rear_rotor_size",
-        col: "rear_rotor_size",
-      },
       { label: "GVWR (lbs)", jsonKey: "gvwr_lbs", col: "gvwr_lbs" },
     ],
   },
-  {
-    id: "suspension",
-    label: "Suspension & Steering",
-    Icon: Settings2,
-    iconCls: "text-emerald-400",
-    defaultOpen: false,
-    fields: [
-      {
-        label: "Front Spring",
-        jsonKey: "front_spring_type",
-        col: "front_spring_type",
-      },
-      {
-        label: "Rear Spring",
-        jsonKey: "rear_spring_type",
-        col: "rear_spring_type",
-      },
-      { label: "Steering", jsonKey: "steering_type", col: "steering_type" },
-    ],
-  },
 ];
+
+/* Build-number-tier fields — these vary by individual VIN within the build group,
+   so they live in the BuildNumberSpecs panel (resolved from the fork engine), not
+   the shared spec sections above. Keys match the Vehicle columns / fork registry. */
+const FORK_FIELDS = [
+  { key: "brake_code", label: "Brake Code", mono: true },
+  { key: "front_rotor_size", label: "Front Rotor" },
+  { key: "rear_rotor_size", label: "Rear Rotor" },
+  { key: "front_spring_type", label: "Front Suspension" },
+  { key: "rear_spring_type", label: "Rear Suspension" },
+  { key: "steering_type", label: "Steering" },
+];
+
+/* Friendly confidence labels — agents shouldn't have to learn engine jargon. */
+const FORK_CONFIDENCE = {
+  observed: {
+    label: "Confirmed",
+    color: "#10b981",
+    desc: "Seen on two or more VINs across this range",
+  },
+  manual: {
+    label: "Set by team",
+    color: "#4f8ef7",
+    desc: "Entered as a known range by the DNR team",
+  },
+  assumed: {
+    label: "Assumed",
+    color: "#f59e0b",
+    desc: "Inferred between known VINs — verify if critical",
+  },
+  extrapolated: {
+    label: "Estimated",
+    color: "#f97316",
+    desc: "Beyond the VINs we've confirmed — treat with caution",
+  },
+};
 
 /* ── Copy-to-clipboard button ───────────────────────────────────────── */
 function CopyBtn({ text, label = "Copied" }) {
@@ -768,6 +776,280 @@ function GMLiveSection({ vehicle }) {
   );
 }
 
+/* ── Build-Number Specs (fork/range data) ──────────────────────────── */
+function padSerial(s) {
+  return String(s ?? "").padStart(6, "0");
+}
+
+function ConfidenceTag({ tier }) {
+  const c = FORK_CONFIDENCE[tier];
+  if (!c) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-semibold shrink-0"
+      style={{ color: c.color }}
+      title={c.desc}
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ backgroundColor: c.color }}
+      />
+      {c.label}
+    </span>
+  );
+}
+
+function ForkFieldRow({ field, resolved, columnVal, ranges, pending, hasSerial }) {
+  const [open, setOpen] = useState(false);
+  const list = ranges ?? [];
+  const value = resolved?.value ?? null;
+  const fallback = !value && columnVal ? String(columnVal) : null;
+  const pendingCount = pending?.length ?? 0;
+  const expandable = list.length > 0 || pendingCount > 0;
+
+  return (
+    <div className="border-b border-border-subtle/40 last:border-0">
+      <div className="flex items-center gap-3 py-2.5">
+        <span className="spec-label shrink-0 w-28">{field.label}</span>
+        <div className="flex-1 min-w-0 flex items-center justify-end gap-2.5">
+          {value ? (
+            <>
+              <span
+                className={`text-sm font-medium text-txt-primary text-right truncate ${field.mono ? "font-mono" : ""}`}
+              >
+                {value}
+              </span>
+              <ConfidenceTag tier={resolved.confidence} />
+            </>
+          ) : fallback ? (
+            <>
+              <span
+                className={`text-sm font-medium text-txt-secondary text-right truncate ${field.mono ? "font-mono" : ""}`}
+              >
+                {fallback}
+              </span>
+              <span
+                className="text-[10px] font-semibold text-txt-muted/70 shrink-0"
+                title="Stored value — not yet confirmed as a build-number range"
+              >
+                unverified
+              </span>
+            </>
+          ) : (
+            <span className="text-sm text-txt-muted/40">—</span>
+          )}
+          {expandable ? (
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="text-txt-muted hover:text-txt-primary shrink-0"
+              title={`${list.length} range${list.length !== 1 ? "s" : ""}`}
+            >
+              {open ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </button>
+          ) : (
+            <span className="w-3.5 shrink-0" />
+          )}
+        </div>
+      </div>
+
+      {open && (
+        <div className="pb-3 pl-1 space-y-1.5 animate-fade-in">
+          {list.length > 0 ? (
+            list.map((r, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="font-mono text-[11px] text-txt-muted tabular-nums shrink-0">
+                  {padSerial(r.serial_start)}–
+                  {r.serial_end != null ? padSerial(r.serial_end) : "end"}
+                </span>
+                <span
+                  className={`font-medium text-txt-secondary truncate ${field.mono ? "font-mono" : ""}`}
+                >
+                  {r.value}
+                </span>
+                <span className="ml-auto shrink-0">
+                  <ConfidenceTag
+                    tier={r.origin === "manual" ? "manual" : "observed"}
+                  />
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="text-[11px] text-txt-muted/60">
+              No confirmed ranges yet.
+            </p>
+          )}
+          {pendingCount > 0 && (
+            <p className="text-[10px] text-amber-500/80 flex items-center gap-1">
+              <Info className="w-3 h-3 shrink-0" />
+              {pendingCount} unconfirmed sighting{pendingCount !== 1 ? "s" : ""}{" "}
+              — needs a matching VIN to form a range
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BuildNumberSpecs({ vehicle }) {
+  const [open, setOpen] = useState(true);
+  const [vinInput, setVinInput] = useState(vehicle.example_build_number ?? "");
+  const [activeVin, setActiveVin] = useState(vehicle.example_build_number ?? "");
+
+  const lookupKey = activeVin || vehicle.build_key;
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["fork", lookupKey],
+    queryFn: () => getForkData(lookupKey).then((r) => r.data),
+    enabled: open && !!lookupKey,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  const resolved = data?.resolved ?? {};
+  const fields = data?.fields ?? {};
+  const pending = data?.pending ?? {};
+  const serial = data?.serial;
+  const hasSerial = serial != null;
+
+  const applyVin = () => {
+    const v = vinInput.trim().toUpperCase();
+    if (v.length === 17 || v.length === 10) setActiveVin(v);
+  };
+
+  const anyData = FORK_FIELDS.some(
+    (f) =>
+      resolved[f.key]?.value || vehicle[f.key] || (fields[f.key]?.length ?? 0),
+  );
+
+  return (
+    <div className="section-card animate-fade-in">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between"
+      >
+        <span className="section-title">
+          <GitBranch className="w-4 h-4 text-emerald-400" />
+          Build-Number Specs
+        </span>
+        {open ? (
+          <ChevronUp className="w-4 h-4 text-txt-muted" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-txt-muted" />
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-3">
+          {/* What this is */}
+          <div className="flex items-start gap-2 bg-emerald-500/[0.06] border border-emerald-500/15 rounded-xl px-3 py-2 mb-3">
+            <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-txt-secondary leading-relaxed">
+              These can differ between individual VINs in this group — showing
+              the values for the build number below.
+            </p>
+          </div>
+
+          {/* VIN selector */}
+          <div className="flex gap-2 mb-2">
+            <div className="relative flex-1">
+              <Fingerprint className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-txt-muted pointer-events-none" />
+              <input
+                value={vinInput}
+                onChange={(e) =>
+                  setVinInput(
+                    e.target.value
+                      .replace(/[^a-zA-Z0-9]/g, "")
+                      .toUpperCase()
+                      .slice(0, 17),
+                  )
+                }
+                onKeyDown={(e) => e.key === "Enter" && applyVin()}
+                placeholder="Enter a VIN to check…"
+                className="w-full bg-bg-elevated border border-border-subtle rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none focus:border-accent/60 transition-all"
+              />
+            </div>
+            <button
+              onClick={applyVin}
+              disabled={vinInput.length !== 17 && vinInput.length !== 10}
+              className="px-3 py-1.5 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent rounded-lg text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              Check
+            </button>
+          </div>
+
+          {hasSerial ? (
+            <p className="text-[10px] text-txt-muted mb-2.5">
+              Showing build number{" "}
+              <span className="font-mono text-txt-secondary">
+                {padSerial(serial)}
+              </span>
+            </p>
+          ) : (
+            <p className="text-[10px] text-amber-500/80 mb-2.5 flex items-center gap-1">
+              <Info className="w-3 h-3 shrink-0" />
+              Enter a full 17-char VIN to resolve values for a specific build
+              number.
+            </p>
+          )}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-6 gap-2 text-txt-muted text-xs">
+              <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+              Loading…
+            </div>
+          ) : isError ? (
+            <p className="text-xs text-txt-muted/60 text-center py-4">
+              Couldn't load build-number data.
+            </p>
+          ) : (
+            <>
+              <div>
+                {FORK_FIELDS.map((f) => (
+                  <ForkFieldRow
+                    key={f.key}
+                    field={f}
+                    resolved={resolved[f.key]}
+                    columnVal={vehicle[f.key]}
+                    ranges={fields[f.key]}
+                    pending={pending[f.key]}
+                    hasSerial={hasSerial}
+                  />
+                ))}
+              </div>
+              {!anyData && (
+                <p className="text-[11px] text-txt-muted/60 text-center pt-3">
+                  No build-number data yet — add it from the DNR page.
+                </p>
+              )}
+            </>
+          )}
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-3 pt-2.5 border-t border-border-subtle/40">
+            {Object.entries(FORK_CONFIDENCE).map(([k, c]) => (
+              <span
+                key={k}
+                className="inline-flex items-center gap-1 text-[9px] text-txt-muted"
+                title={c.desc}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: c.color }}
+                />
+                {c.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Record metadata strip ──────────────────────────────────────────── */
 function RecordMeta({ createdAt, updatedAt }) {
   const fmt = (iso) => {
@@ -1073,6 +1355,7 @@ export default function VehiclePage() {
                   expandAll={expandAll}
                 />
               ))}
+              <BuildNumberSpecs vehicle={vehicle} />
               <CustomFieldsSection
                 customFields={vehicle.custom_fields}
                 vin={vin}

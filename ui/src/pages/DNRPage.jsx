@@ -5,12 +5,14 @@ import {
   CheckCircle2, Loader2, X, Plus, BookOpen, Zap, Disc,
   Settings2, Cpu, GitFork, Car, Fingerprint, AlertTriangle,
   SlidersHorizontal, ChevronDown, ChevronUp, Layers, Trash2,
+  GitBranch, Info, ArrowRight,
 } from "lucide-react";
 import Navbar from "../components/NavBar";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { getDNRQueue, getDNRStats, getSimilarVehicles, propagateSpecs, createVehicleManual } from "../api/dnr";
 import { getVehicle, updateVehicle } from "../api/vehicles";
+import { getForkData, recordForkPoint, recordForkRange } from "../api/fork";
 
 /* ═══════════════════════════════════════════════════════
    Field catalogue
@@ -50,21 +52,22 @@ const SECTIONS = [
       { key: "brake_system_type",label: "System Type",  type: "text" },
       { key: "front_brake_type", label: "Front Type",   type: "select", options: ["Disc","Drum"] },
       { key: "rear_brake_type",  label: "Rear Type",    type: "select", options: ["Disc","Drum"] },
-      { key: "front_rotor_size", label: "Front Rotor",  type: "text",   placeholder: "325mm" },
-      { key: "rear_rotor_size",  label: "Rear Rotor",   type: "text",   placeholder: "298mm" },
-      { key: "brake_code",       label: "Brake Code",   type: "text" },
-    ],
-  },
-  {
-    id: "suspension", label: "Suspension", Icon: Settings2, color: "#10b981",
-    fields: [
-      { key: "front_spring_type", label: "Front Spring", type: "text", placeholder: "Coil, Torsion Bar" },
-      { key: "rear_spring_type",  label: "Rear Spring",  type: "text", placeholder: "Coil, Leaf" },
-      { key: "steering_type",     label: "Steering",     type: "text", placeholder: "Rack & Pinion" },
-      { key: "gvwr_lbs",          label: "GVWR (lbs)",   type: "text", placeholder: "7200" },
+      { key: "gvwr_lbs",         label: "GVWR (lbs)",   type: "text",   placeholder: "7200" },
     ],
   },
 ];
+
+/* Build-number-tier fields — entered per VIN / per range via the Build-Number panel,
+   not as shared column edits. Keys match the Vehicle columns / fork registry. */
+const FORK_FIELDS = [
+  { key: "brake_code",       label: "Brake Code",       placeholder: "JL9, J55…" },
+  { key: "front_rotor_size", label: "Front Rotor",      placeholder: "325mm" },
+  { key: "rear_rotor_size",  label: "Rear Rotor",       placeholder: "298mm" },
+  { key: "front_spring_type",label: "Front Suspension", placeholder: "Coil, Torsion Bar" },
+  { key: "rear_spring_type", label: "Rear Suspension",  placeholder: "Coil, Leaf" },
+  { key: "steering_type",    label: "Steering",         placeholder: "Rack & Pinion" },
+];
+const FORK_LABEL = Object.fromEntries(FORK_FIELDS.map((f) => [f.key, f.label]));
 
 const ALL_KEYS = SECTIONS.flatMap(s => s.fields.map(f => f.key));
 const TOTAL    = ALL_KEYS.length;
@@ -72,13 +75,11 @@ const TOTAL    = ALL_KEYS.length;
 // Keys by category — used for missing-category dots in queue
 const CAT_KEYS = {
   brakes:      SECTIONS.find(s=>s.id==="brakes")?.fields.map(f=>f.key)     ?? [],
-  suspension:  SECTIONS.find(s=>s.id==="suspension")?.fields.map(f=>f.key) ?? [],
   engine:      SECTIONS.find(s=>s.id==="engine")?.fields.map(f=>f.key)     ?? [],
   transmission:SECTIONS.find(s=>s.id==="transmission")?.fields.map(f=>f.key) ?? [],
 };
 const CAT_META = [
   { id:"brakes",       color:"#ef4444", label:"Brakes" },
-  { id:"suspension",   color:"#10b981", label:"Suspension" },
   { id:"engine",       color:"#f59e0b", label:"Engine" },
   { id:"transmission", color:"#8b5cf6", label:"Transmission" },
 ];
@@ -226,7 +227,6 @@ function AddVehicleModal({ onClose, onAdded }) {
 const MISSING_OPTS = [
   {value:"",label:"All vehicles"},
   {value:"brakes",label:"Missing brakes"},
-  {value:"suspension",label:"Missing suspension"},
   {value:"engine",label:"Missing engine"},
   {value:"transmission",label:"Missing transmission"},
 ];
@@ -518,6 +518,202 @@ function CustomAccordion({ fields, onChange, dirty, open, onToggle }) {
 }
 
 /* ═══════════════════════════════════════════════════════
+   Build-Number Data Panel  (fork / range entry)
+═══════════════════════════════════════════════════════ */
+function pad6(s) { return String(s ?? "").padStart(6, "0"); }
+
+function forkOutcomeMsg(o) {
+  switch (o) {
+    case "pending":       return "Saved as a sighting — add one more matching VIN to confirm the range.";
+    case "range_created": return "Range confirmed from two matching VINs!";
+    case "reinforced":    return "Confirmed — strengthened the existing range.";
+    case "forked":        return "New range created.";
+    case "manual_range":  return "Range saved.";
+    default:              return "Saved.";
+  }
+}
+
+function BuildNumberPanel({ vehicle, open, onToggle }) {
+  const toast = useToast();
+  const qc    = useQueryClient();
+  const [mode, setMode]   = useState("vin"); // "vin" | "range"
+  const [field, setField] = useState("brake_code");
+  const [value, setValue] = useState("");
+  const [vin, setVin]     = useState(vehicle.example_build_number ?? "");
+  const [start, setStart] = useState("");
+  const [end, setEnd]     = useState("");
+  const [allBuilds, setAllBuilds] = useState(false);
+
+  // Reset the entry form when switching vehicles
+  useEffect(() => {
+    setValue(""); setStart(""); setEnd(""); setAllBuilds(false);
+    setVin(vehicle?.example_build_number ?? "");
+    setField("brake_code"); setMode("vin");
+  }, [vehicle?.id]);
+
+  const lookup = vehicle.example_build_number || vehicle.build_key;
+  const { data, isLoading } = useQuery({
+    queryKey: ["fork", lookup],
+    queryFn:  () => getForkData(lookup).then((r) => r.data),
+    enabled:  open && !!lookup,
+  });
+  const ranges  = data?.fields ?? {};
+  const pending = data?.pending ?? {};
+  const withData = FORK_FIELDS.filter((f) => (ranges[f.key]?.length ?? 0) > 0).length;
+
+  const reset   = () => { setValue(""); setStart(""); setEnd(""); };
+  const refetch = () => qc.invalidateQueries({ queryKey: ["fork"] });
+
+  const pointMut = useMutation({
+    mutationFn: () => recordForkPoint(vin.trim().toUpperCase(), { field_key: field, value: value.trim() }).then((r) => r.data),
+    onSuccess: (d) => { toast(forkOutcomeMsg(d?.outcome), "success"); reset(); refetch(); },
+    onError:   (e) => toast(e.response?.data?.error ?? "Could not save", "error"),
+  });
+  const rangeMut = useMutation({
+    mutationFn: () => recordForkRange(vehicle.build_key, {
+      field_key: field, value: value.trim(),
+      serial_start: allBuilds ? 0 : Number(start || 0),
+      serial_end:   allBuilds || end === "" ? null : Number(end),
+    }).then((r) => r.data),
+    onSuccess: (d) => { toast(forkOutcomeMsg(d?.outcome), "success"); reset(); refetch(); },
+    onError:   (e) => toast(e.response?.data?.error ?? "Could not save", "error"),
+  });
+
+  const busy       = pointMut.isPending || rangeMut.isPending;
+  const vinReady   = mode === "vin"   && vin.trim().length === 17 && value.trim();
+  const rangeReady = mode === "range" && value.trim() && (allBuilds || start !== "");
+  const ready      = vinReady || rangeReady;
+  const submit     = () => { if (!ready || busy) return; mode === "vin" ? pointMut.mutate() : rangeMut.mutate(); };
+
+  const inputCls = "w-full text-sm px-3 py-2.5 rounded-xl border border-border-subtle bg-bg-elevated text-txt-primary placeholder:text-txt-muted/50 focus:outline-none focus:border-accent transition-all";
+
+  return (
+    <div className="border border-emerald-500/20 rounded-2xl overflow-hidden">
+      {/* Header */}
+      <button onClick={onToggle}
+        className={`w-full flex items-center gap-3 px-4 py-3.5 transition-all ${open ? "bg-emerald-500/[0.06]" : "hover:bg-bg-elevated/30"}`}>
+        <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-500/70" />
+        <GitBranch className="w-4 h-4 shrink-0 text-emerald-400" />
+        <span className="text-sm font-bold text-txt-primary flex-1 text-left">Build-Number Data</span>
+        <span className="text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded px-1.5 py-0.5 shrink-0">PER VIN</span>
+        <span className="text-xs font-mono tabular-nums text-txt-muted shrink-0">{withData}/{FORK_FIELDS.length}</span>
+        {open ? <ChevronUp className="w-4 h-4 text-txt-muted shrink-0" /> : <ChevronDown className="w-4 h-4 text-txt-muted shrink-0" />}
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 pt-3 border-t border-border-subtle space-y-4">
+          {/* Explanation */}
+          <div className="flex items-start gap-2 text-[11px] text-txt-secondary leading-relaxed">
+            <Info className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+            <p>These specs differ between individual VINs. Add a value for one VIN, or set a range of build numbers directly. Two matching VINs confirm a range automatically.</p>
+          </div>
+
+          {/* Mode tabs */}
+          <div className="flex gap-1 p-1 bg-bg-elevated border border-border-subtle rounded-xl">
+            {[{id:"vin",label:"Single VIN"},{id:"range",label:"Range / All"}].map((t) => (
+              <button key={t.id} onClick={() => setMode(t.id)}
+                className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${mode===t.id ? "bg-bg-card text-txt-primary shadow-sm border border-border-subtle" : "text-txt-muted hover:text-txt-secondary"}`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Entry form */}
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider block mb-1">Field</label>
+                <select value={field} onChange={(e)=>setField(e.target.value)} className={`${inputCls} appearance-none cursor-pointer`}>
+                  {FORK_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider block mb-1">Value</label>
+                <input value={value} onChange={(e)=>setValue(e.target.value)} onKeyDown={(e)=>e.key==="Enter"&&submit()}
+                  placeholder={FORK_FIELDS.find(f=>f.key===field)?.placeholder ?? "Value"} className={inputCls}/>
+              </div>
+            </div>
+
+            {mode === "vin" ? (
+              <div>
+                <label className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider block mb-1">VIN (full 17)</label>
+                <div className="relative">
+                  <Fingerprint className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-txt-muted pointer-events-none"/>
+                  <input value={vin} onChange={(e)=>setVin(e.target.value.replace(/[^a-zA-Z0-9]/g,"").toUpperCase().slice(0,17))}
+                    onKeyDown={(e)=>e.key==="Enter"&&submit()}
+                    placeholder="1G1AK55F177000050" className={`${inputCls} pl-10 font-mono tracking-wider`}/>
+                </div>
+                <p className="text-[10px] text-txt-muted mt-1">{vin.length}/17{vin.length===17 && <span className="text-success font-semibold"> ✓ ready</span>}</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-xs text-txt-secondary cursor-pointer select-none">
+                  <input type="checkbox" checked={allBuilds} onChange={(e)=>setAllBuilds(e.target.checked)} className="accent-emerald-500 w-3.5 h-3.5"/>
+                  Applies to <strong className="text-txt-primary">all</strong> build numbers in this group
+                </label>
+                {!allBuilds && (
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider block mb-1">From #</label>
+                      <input value={start} onChange={(e)=>setStart(e.target.value.replace(/[^0-9]/g,""))} placeholder="1" className={`${inputCls} font-mono`}/>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-txt-muted mb-3 shrink-0"/>
+                    <div className="flex-1">
+                      <label className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider block mb-1">To # <span className="text-txt-muted/50 font-normal normal-case">(blank = end)</span></label>
+                      <input value={end} onChange={(e)=>setEnd(e.target.value.replace(/[^0-9]/g,""))} placeholder="end" className={`${inputCls} font-mono`}/>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button onClick={submit} disabled={!ready || busy}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-xl transition-all">
+              {busy ? <Loader2 className="w-4 h-4 animate-spin"/> : <Plus className="w-4 h-4"/>}
+              {mode === "vin" ? "Add for this VIN" : "Set range"}
+            </button>
+          </div>
+
+          {/* Current data */}
+          <div className="pt-1 space-y-2">
+            <p className="text-[10px] font-bold text-txt-muted uppercase tracking-wider">Current data</p>
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-xs text-txt-muted py-2"><Loader2 className="w-3.5 h-3.5 animate-spin"/> Loading…</div>
+            ) : (
+              <div className="space-y-2">
+                {FORK_FIELDS.map((f) => {
+                  const rs   = ranges[f.key] ?? [];
+                  const pend = pending[f.key]?.length ?? 0;
+                  return (
+                    <div key={f.key} className="flex items-start gap-2 text-xs">
+                      <span className="text-txt-muted w-28 shrink-0 pt-0.5">{f.label}</span>
+                      {rs.length === 0 && pend === 0 ? (
+                        <span className="text-txt-muted/40 pt-0.5">no data</span>
+                      ) : (
+                        <div className="flex-1 flex flex-wrap gap-1.5">
+                          {rs.map((r,i) => (
+                            <span key={i} title={`${r.origin === "manual" ? "Set by team" : "Confirmed"} · source: ${r.source}`}
+                              className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${r.origin==="manual" ? "bg-accent/10 border-accent/25" : "bg-success/10 border-success/25"}`}>
+                              <span className="font-mono text-[10px] tabular-nums text-txt-muted">{pad6(r.serial_start)}–{r.serial_end!=null?pad6(r.serial_end):"end"}</span>
+                              <span className="text-[10px] font-semibold text-txt-secondary">{r.value}</span>
+                            </span>
+                          ))}
+                          {pend>0 && <span className="inline-flex items-center gap-1 text-[10px] text-amber-500/80"><Info className="w-3 h-3"/>{pend} pending</span>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    Vehicle Editor
 ═══════════════════════════════════════════════════════ */
 function VehicleEditor({ vehicle, onSaved }) {
@@ -533,6 +729,7 @@ function VehicleEditor({ vehicle, onSaved }) {
   const [open, setOpen] = useState(() => {
     const init = {};
     SECTIONS.forEach(s => { init[s.id] = true; });
+    init.buildnum = true;
     init.custom = false;
     return init;
   });
@@ -547,6 +744,7 @@ function VehicleEditor({ vehicle, onSaved }) {
     // Re-open all spec sections, close custom
     const o = {};
     SECTIONS.forEach(s => { o[s.id] = true; });
+    o.buildnum = true;
     o.custom = false;
     setOpen(o);
   }, [vehicle?.id]);
@@ -653,6 +851,7 @@ function VehicleEditor({ vehicle, onSaved }) {
             onChange={(k,v) => setForm(p=>({...p,[k]:v}))}
           />
         ))}
+        <BuildNumberPanel vehicle={vehicle} open={!!open.buildnum} onToggle={()=>toggleSection("buildnum")}/>
         <CustomAccordion fields={customFields} onChange={setCF} dirty={customDirty}
           open={!!open.custom} onToggle={()=>toggleSection("custom")}/>
       </div>

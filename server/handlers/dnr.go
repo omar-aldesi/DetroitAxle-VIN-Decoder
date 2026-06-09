@@ -18,7 +18,12 @@ import (
 	"main/models"
 )
 
-// ── Spec field catalogue (fields the DNR team researches) ──────────────
+// ── Spec field catalogue (build-key-tier fields the DNR team researches) ──────
+//
+// NOTE: the build-NUMBER-tier fields (brake_code, front/rear_rotor_size,
+// front/rear_spring_type, steering_type) are intentionally NOT here — they vary
+// per individual VIN and are managed by the fork/range engine, not column edits.
+// Keeping them out also stops Propagate from spreading per-VIN data across build keys.
 var dnrSpecFields = []struct {
 	Key      string
 	Category string
@@ -39,13 +44,7 @@ var dnrSpecFields = []struct {
 	{"brake_system_type", "brakes"},
 	{"front_brake_type", "brakes"},
 	{"rear_brake_type", "brakes"},
-	{"front_rotor_size", "brakes"},
-	{"rear_rotor_size", "brakes"},
-	{"brake_code", "brakes"},
-	{"front_spring_type", "suspension"},
-	{"rear_spring_type", "suspension"},
-	{"steering_type", "suspension"},
-	{"gvwr_lbs", "suspension"},
+	{"gvwr_lbs", "brakes"},
 }
 
 // fieldValue extracts a spec field value from a Vehicle as a string.
@@ -86,18 +85,6 @@ func fieldValue(v models.Vehicle, key string) string {
 		return v.FrontBrakeType
 	case "rear_brake_type":
 		return v.RearBrakeType
-	case "front_rotor_size":
-		return v.FrontRotorSize
-	case "rear_rotor_size":
-		return v.RearRotorSize
-	case "brake_code":
-		return v.BrakeCode
-	case "front_spring_type":
-		return v.FrontSpringType
-	case "rear_spring_type":
-		return v.RearSpringType
-	case "steering_type":
-		return v.SteeringType
 	case "gvwr_lbs":
 		return v.GVWR
 	}
@@ -204,11 +191,10 @@ func (h *DNRHandler) GetQueue(c *gin.Context) {
 	}
 
 	// ── Missing-category filter ──────────────────────────────────────
+	// (brakes/suspension fork fields are excluded — they're build-number-tier now)
 	switch q.Missing {
 	case "brakes":
-		db = db.Where("(front_rotor_size IS NULL OR front_rotor_size = '' OR rear_rotor_size IS NULL OR rear_rotor_size = '' OR front_brake_type IS NULL OR front_brake_type = '' OR rear_brake_type IS NULL OR rear_brake_type = '')")
-	case "suspension":
-		db = db.Where("(front_spring_type IS NULL OR front_spring_type = '' OR rear_spring_type IS NULL OR rear_spring_type = '')")
+		db = db.Where("(front_brake_type IS NULL OR front_brake_type = '' OR rear_brake_type IS NULL OR rear_brake_type = '' OR gvwr_lbs IS NULL OR gvwr_lbs = '')")
 	case "engine":
 		db = db.Where("(cylinders IS NULL OR cylinders = '' OR displacement_l IS NULL OR displacement_l = '')")
 	case "transmission":
