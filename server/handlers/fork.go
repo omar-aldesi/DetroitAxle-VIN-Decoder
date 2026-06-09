@@ -225,6 +225,66 @@ func (h *ForkHandler) RecordForkRange(c *gin.Context) {
 	helpers.OK(c, gin.H{"outcome": outcome, "build_key": buildKey, "field_key": req.FieldKey})
 }
 
+// BackfillLegacy seeds the range engine from existing VERIFIED data (rule #2: unverified
+// values "don't exist", so they are skipped). For each global fork field it takes the
+// latest verified value per vehicle and writes it as a manual base range (build-key-wide,
+// source "legacy"). Idempotent — a manual base range simply gets rewritten on re-run.
+//
+//	POST /api/admin/fork/backfill   (admin only, enforced by the route)
+func (h *ForkHandler) BackfillLegacy(c *gin.Context) {
+	var keys []string
+	if err := h.DB.Model(&models.ForkField{}).
+		Where("enabled = ? AND scope_make = '' AND scope_model = ''", true).
+		Pluck("key", &keys).Error; err != nil {
+		helpers.Fail(c, http.StatusInternalServerError, "failed to load fork fields")
+		return
+	}
+
+	engine := services.NewForkEngine(services.NewGormForkStore(h.DB))
+	imported, skipped := 0, 0
+
+	for _, key := range keys {
+		// Latest verified value per vehicle for this field (Postgres DISTINCT ON).
+		type row struct {
+			VehicleID uint
+			NewValue  string
+		}
+		var rows []row
+		if err := h.DB.Raw(`
+			SELECT DISTINCT ON (vehicle_id) vehicle_id, new_value
+			FROM vehicle_field_histories
+			WHERE field_name = ? AND is_verified = true
+			ORDER BY vehicle_id, created_at DESC
+		`, key).Scan(&rows).Error; err != nil {
+			helpers.Fail(c, http.StatusInternalServerError, "failed to read history for "+key)
+			return
+		}
+
+		for _, r := range rows {
+			if strings.TrimSpace(r.NewValue) == "" {
+				skipped++
+				continue
+			}
+			var veh models.Vehicle
+			if err := h.DB.First(&veh, r.VehicleID).Error; err != nil {
+				skipped++
+				continue
+			}
+			outcome, err := engine.RecordRange(services.RangeInput{
+				BuildKey: veh.BuildKey, SerialStart: 0, SerialEnd: nil, FieldKey: key,
+				Value: r.NewValue, Source: "legacy", Verified: true, Make: veh.Make, Model: veh.Model,
+			})
+			if err == nil && outcome == services.OutcomeManualRange {
+				imported++
+			} else {
+				skipped++
+			}
+		}
+	}
+
+	helpers.OK(c, gin.H{"imported": imported, "skipped": skipped, "fields": keys})
+}
+
 func (h *ForkHandler) vehicleByVIN(vin string) (*models.Vehicle, error) {
 	buildKey := vin
 	if len(vin) == 17 {

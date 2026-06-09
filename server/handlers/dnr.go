@@ -487,6 +487,11 @@ func (h *DNRHandler) Propagate(c *gin.Context) {
 		}
 
 		if !req.DryRun {
+			// NOTE (fork system): propagation writes the transitional columns and records
+			// history, but intentionally does NOT feed the build-number range engine. A
+			// propagated value is a cross-build-key *guess* (same make/model/year), not a
+			// real per-VIN sighting, so it must never become authoritative fork data. The
+			// engine is fed only by direct VIN edits and explicit manual ranges.
 			err := h.DB.Transaction(func(tx *gorm.DB) error {
 				payload["updated_at"] = time.Now()
 				if err := tx.Model(&models.Vehicle{}).

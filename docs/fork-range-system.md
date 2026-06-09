@@ -117,8 +117,10 @@ fork_field
   UNIQUE (key, scope_make, scope_model)
 ```
 
-**Default seeded keys** (global, `value_type = "string"`):
-`brake_code, front_rotor_size, rear_rotor_size, front_suspension, rear_suspension, steering`.
+**Default seeded keys** (global, `value_type = "string"`) — these are the actual Vehicle
+**column names**, so the edit path (which routes by column key) matches the registry:
+`brake_code, front_rotor_size, rear_rotor_size, front_spring_type, rear_spring_type,
+steering_type` (the latter three are "front/rear suspension" and "steering").
 Optional, off by default: `rear_axle_ratio, transfer_case`.
 
 The fork-field set for a vehicle = enabled rows matching `scope_make IS NULL`

@@ -19,6 +19,10 @@ type HistoryResponse struct {
 	VerifierID *uint     `json:"verifier_id"`
 	Source     string    `json:"source"`
 	CreatedAt  time.Time `json:"created_at"`
+
+	// Build-number context (fork system).
+	OriginSerial *int64 `json:"origin_serial"`
+	Tier         string `json:"tier,omitempty"`
 }
 
 type FullHistoryResponse struct {
@@ -36,10 +40,12 @@ func HistoryFromModel(history *models.VehicleFieldHistory) HistoryResponse {
 		OldValue:   history.OldValue,
 		NewValue:   history.NewValue,
 		IsTrusted:  history.IsTrusted,
-		IsVerified: history.IsVerified,
-		VerifierID: history.VerifierID,
-		Source:     history.Source,
-		CreatedAt:  history.CreatedAt,
+		IsVerified:   history.IsVerified,
+		VerifierID:   history.VerifierID,
+		Source:       history.Source,
+		CreatedAt:    history.CreatedAt,
+		OriginSerial: history.OriginSerial,
+		Tier:         history.Tier,
 	}
 }
 

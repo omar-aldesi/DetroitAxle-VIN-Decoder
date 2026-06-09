@@ -72,6 +72,9 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 
 	admin := base.Group("/admin", auth.RequireAuth(db), auth.RequireAdmin)
 	{
+		// One-time seed of the fork engine from existing verified data.
+		admin.POST("/fork/backfill", forkHandler.BackfillLegacy)
+
 		admin.GET("/stats", adminHandler.AdminStatus)
 		admin.GET("/users", adminHandler.ListUsers)
 		admin.PATCH("/users/:id", adminHandler.UpdateUser)
