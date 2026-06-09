@@ -19,6 +19,12 @@ type NoteResponse struct {
 	IsResolved     bool              `json:"is_resolved"`
 	ResolveNote    *string           `json:"resolve_note"`
 	CreatedAt      time.Time         `json:"created_at"`
+
+	// Build-number scope. OriginSerial is the serial the note was entered against (nil =
+	// build-key-wide). Scope ("applies" | "warn" | "") is computed per viewed VIN by the
+	// vehicle handler; empty when not evaluated in a per-VIN context.
+	OriginSerial *int64 `json:"origin_serial"`
+	Scope        string `json:"scope,omitempty"`
 }
 
 type CreateNoteRequest struct {
@@ -78,6 +84,7 @@ func NoteFromModel(note *models.AgentNote) NoteResponse {
 		IsResolved:     note.IsResolved,
 		ResolveNote:    note.ResolveNote,
 		CreatedAt:      note.CreatedAt,
+		OriginSerial:   note.OriginSerial,
 	}
 }
 

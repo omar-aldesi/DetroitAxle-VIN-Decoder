@@ -74,6 +74,10 @@ type AgentNote struct {
 
 	IsResolved  bool    `gorm:"not null;default:false"`
 	ResolveNote *string `gorm:"size:1000"`
+
+	// Build-number the note was entered against (nil = entered build-key-wide). Used to
+	// compute whether the note applies to the VIN being viewed (see services.NoteScope).
+	OriginSerial *int64 `gorm:"column:origin_serial"`
 }
 type Vehicle struct {
 	ID                 uint   `gorm:"primaryKey;autoIncrement"`

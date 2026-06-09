@@ -33,6 +33,27 @@ func (h *VehicleHandler) GetVehicleById(c *gin.Context) {
 	helpers.OK(c, dto.VehicleFromModel(vehicle))
 }
 
+// respondWithVehicle maps the vehicle to a DTO and annotates each note with whether it
+// applies to the VIN being viewed (build-number scope), then returns it.
+func (h *VehicleHandler) respondWithVehicle(c *gin.Context, vehicle *models.Vehicle, vin string) {
+	resp := dto.VehicleFromModel(*vehicle)
+	if len(resp.Notes) > 0 {
+		var viewSerial *int64
+		if s, ok := services.SerialFromVIN(vin); ok {
+			viewSerial = &s
+		}
+		boundaries, err := services.ForkBoundaries(h.DB, vehicle.BuildKey)
+		if err != nil {
+			log.Printf("note scope: failed to load boundaries for %s: %v", vehicle.BuildKey, err)
+		} else {
+			for i := range resp.Notes {
+				resp.Notes[i].Scope = services.NoteScope(boundaries, resp.Notes[i].OriginSerial, viewSerial)
+			}
+		}
+	}
+	helpers.OK(c, resp)
+}
+
 func (h *VehicleHandler) GetVehicle(c *gin.Context) {
 	vin := c.Param("vin")
 	user := auth.CurrentUser(c)
@@ -100,7 +121,7 @@ func (h *VehicleHandler) GetVehicle(c *gin.Context) {
 			}
 		}
 		incrementVinUsage(h.DB, user.ID)
-		helpers.OK(c, dto.VehicleFromModel(vehicle))
+		h.respondWithVehicle(c, &vehicle, vin)
 		return
 	}
 
@@ -122,7 +143,7 @@ func (h *VehicleHandler) GetVehicle(c *gin.Context) {
 
 	// New decode succeeded — increment and return
 	incrementVinUsage(h.DB, user.ID)
-	helpers.OK(c, dto.VehicleFromModel(vehicle))
+	h.respondWithVehicle(c, &vehicle, vin)
 }
 
 func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {

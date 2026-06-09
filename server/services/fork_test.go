@@ -286,6 +286,29 @@ func TestSerialFromVIN(t *testing.T) {
 	}
 }
 
+func TestNoteScope(t *testing.T) {
+	boundaries := []int64{1, 101, 352} // change points from the walkthrough
+	cases := []struct {
+		name       string
+		boundaries []int64
+		note, view *int64
+		want       string
+	}{
+		{"same segment applies", boundaries, ptr(50), ptr(75), NoteScopeApplies},
+		{"boundary between warns", boundaries, ptr(50), ptr(150), NoteScopeWarn},
+		{"same serial applies", boundaries, ptr(120), ptr(120), NoteScopeApplies},
+		{"unscoped note warns", boundaries, nil, ptr(50), NoteScopeWarn},
+		{"no view serial warns", boundaries, ptr(50), nil, NoteScopeWarn},
+		{"no range data warns", nil, ptr(50), ptr(75), NoteScopeWarn},
+		{"order-independent", boundaries, ptr(150), ptr(50), NoteScopeWarn},
+	}
+	for _, c := range cases {
+		if got := NoteScope(c.boundaries, c.note, c.view); got != c.want {
+			t.Errorf("%s: NoteScope = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func derefOr(p *int64) int64 {
 	if p == nil {
 		return -1

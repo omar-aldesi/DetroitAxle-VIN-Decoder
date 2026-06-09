@@ -345,7 +345,12 @@ Nothing *verified* is lost, nothing *unverified* enters, reversible.
   - Read endpoint `GET /api/fork/:vin` (build-key field→ranges view + per-VIN resolve).
   - **Deferred:** the §9 backfill of verified legacy column values — will be an explicit
     admin action (Phase 4), so the engine starts clean and fills via edits/verifies.
-- **Phase 3 — Notes become range-aware** (`origin_serial`, applies/⚠ at read time).
+- **Phase 3 — Notes become range-aware. ✅ DONE.**
+  - `agent_notes.origin_serial`; `AddNote` captures the serial from the VIN.
+  - `services.ForkBoundaries` + `NoteScope` (applies only when both serials known, range
+    data exists, and no boundary lies between them — else ⚠).
+  - `GetVehicle` annotates each note's `scope` for the VIN being viewed; all notes still
+    returned. (Frontend rendering of the ⚠ badge is part of the later frontend doc.)
 - **Phase 4 — Sources & admin** (generic import entry; admin "rebuild ranges" + legacy
   backfill; "pending / no-data" filters).
 - **Phase 5 — Reconciliation worker** (later).
