@@ -569,6 +569,21 @@ func IsForkFieldKey(db *gorm.DB, make_, model, fieldKey string) bool {
 	return err == nil && ok
 }
 
+// PendingPointsFor returns the un-absorbed pending sightings per field for a build key
+// (the single verified observations still waiting for a second to form a range).
+func PendingPointsFor(db *gorm.DB, buildKey string) (map[string][]int64, error) {
+	var pts []models.FieldPoint
+	if err := db.Where("build_key = ?", buildKey).
+		Order("field_key ASC, serial ASC").Find(&pts).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string][]int64)
+	for _, p := range pts {
+		out[p.FieldKey] = append(out[p.FieldKey], p.Serial)
+	}
+	return out, nil
+}
+
 // ForkFieldKeysFor returns the enabled fork-field keys that apply to a make/model
 // (global + make-scoped + make/model-scoped).
 func ForkFieldKeysFor(db *gorm.DB, make_, model string) ([]string, error) {

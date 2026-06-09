@@ -38,6 +38,9 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 
 		// Build-number fork/range data for a VIN or build key.
 		api.GET("/fork/:vin", forkHandler.GetForkData)
+		// Write paths (trusted users enforced inside the handlers):
+		api.POST("/fork/:vin/point", forkHandler.RecordForkPoint) // a verified VIN sighting
+		api.POST("/fork/:vin/range", forkHandler.RecordForkRange) // an authoritative manual span
 	}
 
 	a := base.Group("/auth")

@@ -351,9 +351,13 @@ Nothing *verified* is lost, nothing *unverified* enters, reversible.
     data exists, and no boundary lies between them — else ⚠).
   - `GetVehicle` annotates each note's `scope` for the VIN being viewed; all notes still
     returned. (Frontend rendering of the ⚠ badge is part of the later frontend doc.)
-- **Phase 4 — Sources & admin** (generic import entry; admin "rebuild ranges" + legacy
-  backfill; "pending / no-data" filters).
-- **Phase 5 — Reconciliation worker** (later).
+- **Phase 4 — Sources & write endpoints. ✅ DONE (core).**
+  - `POST /api/fork/:vin/point` — a verified VIN sighting (two-point rule). Trusted-only.
+  - `POST /api/fork/:vin/range` — an authoritative manual span (DNR use). Trusted-only.
+  - `GET /api/fork/:vin` now also returns `pending` (per-field un-absorbed sightings).
+  - **Deferred:** admin legacy-column backfill (needs the verified-only vs. import-all
+    policy decided) and admin "rebuild ranges".
+- **Phase 5 — Reconciliation worker** (later) — scans split conflicts, offline rebuild.
 - **Frontend** — separate document, after the server phases land.
 
 ---
