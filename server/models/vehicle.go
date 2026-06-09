@@ -43,6 +43,11 @@ type VehicleFieldHistory struct {
 	VerifierID *uint  `gorm:"index"`
 	Source     string `gorm:"column:source;size:500"` // where this data came from (DNR use)
 
+	// Build-number fork system: which serial this edit was made against (nil = the
+	// edit was build-key-wide), and which tier the field belongs to.
+	OriginSerial *int64 `gorm:"column:origin_serial"`
+	Tier         string `gorm:"column:tier;size:20"` // "build_key" | "build_number" | ""
+
 	Vehicle *Vehicle `gorm:"foreignKey:VehicleID"`
 }
 

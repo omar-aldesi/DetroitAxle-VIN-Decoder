@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"main/auth"
 	"main/helpers"
 	"main/models"
+	"main/services"
 )
 
 type HistoryHandler struct {
@@ -266,6 +268,23 @@ func (h *HistoryHandler) VerifyEntry(c *gin.Context) {
 	if err != nil {
 		helpers.Fail(c, http.StatusInternalServerError, "failed to apply updates")
 		return
+	}
+
+	// Feed the now-verified value into the build-number range engine. Trusted entries were
+	// already fed at edit time, so only feed previously-untrusted ones here. Non-fatal.
+	if !entry.IsTrusted {
+		var veh models.Vehicle
+		if err := h.DB.First(&veh, entry.VehicleID).Error; err == nil {
+			value := entry.NewValue
+			if requestBody.CorrectedValue != nil {
+				value = *requestBody.CorrectedValue
+			}
+			verifier := requestBody.VerifierID
+			if _, err := services.FeedForkField(h.DB, veh.BuildKey, veh.Make, veh.Model,
+				entry.FieldName, value, entry.OriginSerial, "verified", &verifier); err != nil {
+				log.Printf("fork feed on verify failed for %s.%s: %v", veh.BuildKey, entry.FieldName, err)
+			}
+		}
 	}
 
 	helpers.OK(c, gin.H{

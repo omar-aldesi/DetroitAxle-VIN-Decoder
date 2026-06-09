@@ -4,6 +4,7 @@ import (
 	"main/config"
 	"main/models"
 	"main/routes"
+	"main/services"
 
 	"log"
 
@@ -30,9 +31,18 @@ func main() {
 		&models.VehicleFieldHistory{},
 		&models.CatalogPart{},
 		&models.PartFitmentRule{},
+		// --- build-number fork/range system ---
+		&models.ForkField{},
+		&models.FieldRange{},
+		&models.FieldPoint{},
 	)
 	if err != nil {
 		log.Fatal("Migration failed:", err)
+	}
+
+	// Seed the default build-number fork fields (idempotent).
+	if err := services.SeedDefaultForkFields(db); err != nil {
+		log.Printf("warning: seeding default fork fields failed: %v", err)
 	}
 
 	r := gin.Default()

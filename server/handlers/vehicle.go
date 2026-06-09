@@ -207,7 +207,16 @@ func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {
 	currentMap := helpers.StructToMap(current)
 	historyEntries := []models.VehicleFieldHistory{}
 	isTrusted := user.Role != "agent" || user.IsTrusted
-	//
+
+	// Build-number context: which serial this edit targets (nil = build-key-wide).
+	var serialPtr *int64
+	if s, ok := services.SerialFromVIN(vin); ok {
+		serialPtr = &s
+	}
+	// Fork-field edits to feed the range engine (only verified/trusted ones — rule #2).
+	type forkFeed struct{ field, value string }
+	var forkFeeds []forkFeed
+
 	for fieldName, newVal := range payload {
 		oldVal := currentMap[fieldName]
 		oldStr := fmt.Sprintf("%v", oldVal)
@@ -215,15 +224,28 @@ func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {
 		if oldStr == newStr {
 			continue
 		}
+
+		tier := "build_key"
+		var entrySerial *int64
+		if services.IsForkFieldKey(h.DB, current.Make, current.Model, fieldName) {
+			tier = "build_number"
+			entrySerial = serialPtr
+			if isTrusted {
+				forkFeeds = append(forkFeeds, forkFeed{fieldName, newStr})
+			}
+		}
+
 		historyEntries = append(historyEntries, models.VehicleFieldHistory{
-			VehicleID: uint(current.ID),
-			UserID:    user.ID,
-			Username:  user.Username,
-			FieldName: fieldName,
-			OldValue:  oldStr,
-			NewValue:  newStr,
-			IsTrusted: isTrusted,
-			Source:    source,
+			VehicleID:    uint(current.ID),
+			UserID:       user.ID,
+			Username:     user.Username,
+			FieldName:    fieldName,
+			OldValue:     oldStr,
+			NewValue:     newStr,
+			IsTrusted:    isTrusted,
+			Source:       source,
+			OriginSerial: entrySerial,
+			Tier:         tier,
 		})
 	}
 
@@ -239,6 +261,22 @@ func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {
 		if err := h.DB.Create(&historyEntries).Error; err != nil {
 			// Non-fatal — update succeeded, just log it
 			log.Printf("failed to write field history for vehicle %s: %v", buildKey, err)
+		}
+	}
+
+	// 6b. Feed verified (trusted) fork-field edits into the build-number range engine.
+	// Untrusted agent edits are NOT fed here — they reach the engine only once verified
+	// (see HistoryHandler.VerifyEntry). Non-fatal: a failure never blocks the edit.
+	if len(forkFeeds) > 0 {
+		feedSource := source
+		if feedSource == "" {
+			feedSource = user.Role
+		}
+		for _, f := range forkFeeds {
+			if _, err := services.FeedForkField(h.DB, buildKey, current.Make, current.Model,
+				f.field, f.value, serialPtr, feedSource, &user.ID); err != nil {
+				log.Printf("fork feed failed for %s.%s: %v", buildKey, f.field, err)
+			}
 		}
 	}
 

@@ -20,6 +20,7 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 	partsHandler  := &handlers.PartsHandler{DB: db}
 	importHandler := &handlers.ImportHandler{DB: db}
 	gmHandler     := &handlers.GMHandler{DB: db}
+	forkHandler   := &handlers.ForkHandler{DB: db}
 
 	base := r.Group("/api")
 
@@ -34,6 +35,9 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 		// GM Parts Giant — live RPO/build-option lookup for a specific VIN.
 		// Not persisted; data is VIN-specific and must not be stored under a build key.
 		api.GET("/gm/decode/:vin", gmHandler.DecodeGMLive)
+
+		// Build-number fork/range data for a VIN or build key.
+		api.GET("/fork/:vin", forkHandler.GetForkData)
 	}
 
 	a := base.Group("/auth")
