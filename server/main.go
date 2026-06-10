@@ -35,6 +35,7 @@ func main() {
 		&models.ForkField{},
 		&models.FieldRange{},
 		&models.FieldPoint{},
+		&models.KnownVIN{},
 	)
 	if err != nil {
 		log.Fatal("Migration failed:", err)

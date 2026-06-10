@@ -7,8 +7,6 @@ import (
 	"main/models"
 )
 
-// ─── in-memory ForkStore for testing the algorithm without a DB ────────────────
-
 type memForkStore struct {
 	fields map[string]bool
 	ranges map[uint]*models.FieldRange
@@ -63,7 +61,16 @@ func (m *memForkStore) SaveRange(r *models.FieldRange) error {
 	return nil
 }
 func (m *memForkStore) DeleteRange(id uint) error { delete(m.ranges, id); return nil }
+// SavePoint mirrors the gorm store: upsert on (build_key, field_key, serial).
 func (m *memForkStore) SavePoint(p *models.FieldPoint) error {
+	if p.ID == 0 {
+		for id, q := range m.points {
+			if q.BuildKey == p.BuildKey && q.FieldKey == p.FieldKey && q.Serial == p.Serial {
+				p.ID = id
+				break
+			}
+		}
+	}
 	if p.ID == 0 {
 		m.nextP++
 		p.ID = m.nextP
@@ -78,8 +85,6 @@ func (m *memForkStore) DeletePoints(ids []uint) error {
 	}
 	return nil
 }
-
-// ─── helpers ───────────────────────────────────────────────────────────────────
 
 const bk = "1G1AK55F77"
 
@@ -107,8 +112,6 @@ func resolveVal(t *testing.T, e *ForkEngine, serial int64) (string, bool) {
 	r, ok := m["brake_code"]
 	return r.Value, ok
 }
-
-// ─── tests ─────────────────────────────────────────────────────────────────────
 
 func TestFork_TwoPointRule(t *testing.T) {
 	e := NewForkEngine(newMemStore("brake_code"))
@@ -297,6 +300,7 @@ func TestNoteScope(t *testing.T) {
 		{"same segment applies", boundaries, ptr(50), ptr(75), NoteScopeApplies},
 		{"boundary between warns", boundaries, ptr(50), ptr(150), NoteScopeWarn},
 		{"same serial applies", boundaries, ptr(120), ptr(120), NoteScopeApplies},
+		{"same serial applies even without range data", nil, ptr(120), ptr(120), NoteScopeApplies},
 		{"unscoped note warns", boundaries, nil, ptr(50), NoteScopeWarn},
 		{"no view serial warns", boundaries, ptr(50), nil, NoteScopeWarn},
 		{"no range data warns", nil, ptr(50), ptr(75), NoteScopeWarn},
@@ -314,4 +318,179 @@ func derefOr(p *int64) int64 {
 		return -1
 	}
 	return *p
+}
+
+// Re-verifying the same VIN with a corrected value must replace the old sighting
+// (upsert), not error on the unique index, and the corrected value must win.
+func TestFork_CorrectedSightingSameSerial(t *testing.T) {
+	store := newMemStore("brake_code")
+	e := NewForkEngine(store)
+
+	rp(t, e, 1, "JP9")
+	if got := rp(t, e, 1, "JP6"); got != OutcomePending {
+		t.Fatalf("corrected sighting = %s, want pending", got)
+	}
+	if len(store.points) != 1 {
+		t.Fatalf("expected 1 point after correction, got %d", len(store.points))
+	}
+
+	rp(t, e, 100, "JP6")
+	if v, ok := resolveVal(t, e, 50); !ok || v != "JP6" {
+		t.Fatalf("serial 50 = (%q,%v), want JP6 (corrected value wins)", v, ok)
+	}
+}
+
+// Agreeing points in different gaps (an existing range between them) must each wait for
+// their own second sighting — and form per-gap ranges, never one straddling range.
+func TestFork_GapGrouping(t *testing.T) {
+	e := NewForkEngine(newMemStore("brake_code"))
+
+	rp(t, e, 200, "JP6")
+	rp(t, e, 300, "JP6") // → [200..300] JP6
+
+	if got := rp(t, e, 100, "JP9"); got != OutcomePending {
+		t.Fatalf("100 = %s, want pending", got)
+	}
+	if got := rp(t, e, 500, "JP9"); got != OutcomePending {
+		t.Fatalf("500 = %s, want pending (different gap than 100 — range between)", got)
+	}
+
+	if got := rp(t, e, 510, "JP9"); got != OutcomeRangeCreated {
+		t.Fatalf("510 = %s, want range_created (second JP9 in the upper gap)", got)
+	}
+	if v, ok := resolveVal(t, e, 505); !ok || v != "JP9" {
+		t.Fatalf("serial 505 = (%q,%v), want JP9", v, ok)
+	}
+	if v, _ := resolveVal(t, e, 250); v != "JP6" {
+		t.Fatalf("serial 250 = %q, want JP6 (existing range untouched)", v)
+	}
+	if _, ok := resolveVal(t, e, 100); ok {
+		t.Fatal("serial 100 should still be unknown (lower gap has only one sighting)")
+	}
+
+	if got := rp(t, e, 110, "JP9"); got != OutcomeRangeCreated {
+		t.Fatalf("110 = %s, want range_created (second JP9 in the lower gap)", got)
+	}
+	if v, ok := resolveVal(t, e, 105); !ok || v != "JP9" {
+		t.Fatalf("serial 105 = (%q,%v), want JP9", v, ok)
+	}
+}
+
+// A build-key-wide base value fills only the gaps — it must never erase observed ranges.
+func TestFork_BaseRangeFillsGapsOnly(t *testing.T) {
+	e := NewForkEngine(newMemStore("brake_code"))
+
+	rp(t, e, 100, "JP6")
+	rp(t, e, 200, "JP6") // → [100..200] JP6
+
+	o, err := e.RecordBaseRange(RangeInput{
+		BuildKey: bk, SerialStart: 0, FieldKey: "brake_code",
+		Value: "JP9", Source: "verified", Verified: true,
+	})
+	if err != nil || o != OutcomeBaseRange {
+		t.Fatalf("RecordBaseRange = (%s,%v), want base_range", o, err)
+	}
+
+	checks := map[int64]string{0: "JP9", 50: "JP9", 99: "JP9", 100: "JP6", 200: "JP6", 201: "JP9", 99999: "JP9"}
+	for serial, want := range checks {
+		if v, ok := resolveVal(t, e, serial); !ok || v != want {
+			t.Errorf("serial %d = (%q,%v), want %s", serial, v, ok, want)
+		}
+	}
+
+	// Re-running with another value is a no-op: everything is already covered.
+	o, err = e.RecordBaseRange(RangeInput{
+		BuildKey: bk, SerialStart: 0, FieldKey: "brake_code",
+		Value: "JP4", Source: "legacy", Verified: true,
+	})
+	if err != nil || o != OutcomeBaseRange {
+		t.Fatalf("re-run RecordBaseRange = (%s,%v), want base_range", o, err)
+	}
+	if v, _ := resolveVal(t, e, 50); v != "JP9" {
+		t.Fatalf("serial 50 = %q, want JP9 (re-run must not overwrite covered ranges)", v)
+	}
+	if v, _ := resolveVal(t, e, 150); v != "JP6" {
+		t.Fatalf("serial 150 = %q, want JP6 (re-run must not overwrite observed range)", v)
+	}
+}
+
+// A pending contradiction later covered by an agreeing range must be absorbed,
+// not linger as a phantom pending sighting.
+func TestFork_StalePendingAbsorbed(t *testing.T) {
+	store := newMemStore("brake_code")
+	e := NewForkEngine(store)
+
+	rp(t, e, 1, "JP9")
+	rp(t, e, 200, "JP9") // → [1..200] JP9
+
+	if got := rp(t, e, 50, "JP6"); got != OutcomePending {
+		t.Fatalf("exception 50 = %s, want pending", got)
+	}
+	if len(store.points) != 1 {
+		t.Fatalf("expected 1 pending point, got %d", len(store.points))
+	}
+
+	// DNR confirms the exception span manually with the same value.
+	if o, err := e.RecordRange(RangeInput{
+		BuildKey: bk, SerialStart: 40, SerialEnd: ptr(60), FieldKey: "brake_code",
+		Value: "JP6", Source: "dnr", Verified: true,
+	}); err != nil || o != OutcomeManualRange {
+		t.Fatalf("RecordRange = (%s,%v), want manual_range", o, err)
+	}
+
+	if len(store.points) != 0 {
+		t.Fatalf("pending point should be absorbed by the agreeing manual range, %d left", len(store.points))
+	}
+}
+
+// Remnants of a trim/carve keep only the evidence inside them; a remnant with no real
+// evidence must not resolve as "observed".
+func TestFork_RemnantEvidenceHonest(t *testing.T) {
+	e := NewForkEngine(newMemStore("brake_code"))
+
+	rp(t, e, 1, "JP9")
+	rp(t, e, 100, "JP9") // → [1..100] JP9, evidence at 1 and 100
+
+	// Manual range over the top end: right remnant would be empty, left remnant [1..49]
+	// keeps the evidence at serial 1 only.
+	if o, err := e.RecordRange(RangeInput{
+		BuildKey: bk, SerialStart: 50, SerialEnd: ptr(100), FieldKey: "brake_code",
+		Value: "JP6", Source: "dnr", Verified: true,
+	}); err != nil || o != OutcomeManualRange {
+		t.Fatalf("RecordRange = (%s,%v), want manual_range", o, err)
+	}
+
+	m, _ := e.Resolve(bk, 25, []string{"brake_code"})
+	r := m["brake_code"]
+	if r.Value != "JP9" {
+		t.Fatalf("serial 25 = %q, want JP9", r.Value)
+	}
+	if r.Confidence == ConfObserved {
+		t.Fatalf("serial 25 confidence = %s; remnant evidence is only serial 1 — must not be observed", r.Confidence)
+	}
+	if r.SerialMaxSeen > 49 {
+		t.Fatalf("left remnant SerialMaxSeen = %d, want <= 49 (evidence at 100 was cut away)", r.SerialMaxSeen)
+	}
+}
+
+// A carve absorbing 3 agreeing exceptions must record 3 observations, not a hardcoded 2.
+func TestFork_CarveObservationCount(t *testing.T) {
+	e := NewForkEngine(newMemStore("brake_code"))
+
+	rp(t, e, 1, "JP9")
+	rp(t, e, 300, "JP9") // → [1..300] JP9
+
+	// Two exceptions carve; a third inside reinforces the carved range.
+	rp(t, e, 50, "JP6")
+	if got := rp(t, e, 70, "JP6"); got != OutcomeForked {
+		t.Fatalf("second exception = %s, want forked", got)
+	}
+	if got := rp(t, e, 60, "JP6"); got != OutcomeReinforced {
+		t.Fatalf("third matching sighting = %s, want reinforced", got)
+	}
+
+	m, _ := e.Resolve(bk, 60, []string{"brake_code"})
+	if m["brake_code"].Observations != 3 {
+		t.Fatalf("observations = %d, want 3 (2 carved + 1 reinforced)", m["brake_code"].Observations)
+	}
 }

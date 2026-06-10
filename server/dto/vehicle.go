@@ -6,6 +6,8 @@ type VehicleResponse struct {
 	ID                 uint   `json:"id"`
 	BuildKey           string `json:"build_key"`
 	ExampleBuildNumber string `json:"example_build_number"`
+	ViewedVIN          string   `json:"viewed_vin,omitempty"`  // full VIN from this request (17-char lookups)
+	KnownVINs          []string `json:"known_vins,omitempty"` // distinct units seen for this build key
 
 	Year      int    `json:"year"`
 	Make      string `json:"make"`

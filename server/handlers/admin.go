@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	dto "main/DTO"
+	dto "main/dto"
 	"main/helpers"
 	"main/models"
 	"math"

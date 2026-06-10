@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	dto "main/DTO"
+	dto "main/dto"
 	"main/auth"
 	"main/helpers"
 	"main/models"
@@ -270,20 +270,18 @@ func (h *HistoryHandler) VerifyEntry(c *gin.Context) {
 		return
 	}
 
-	// Feed the now-verified value into the build-number range engine. Trusted entries were
-	// already fed at edit time, so only feed previously-untrusted ones here. Non-fatal.
-	if !entry.IsTrusted {
-		var veh models.Vehicle
-		if err := h.DB.First(&veh, entry.VehicleID).Error; err == nil {
-			value := entry.NewValue
-			if requestBody.CorrectedValue != nil {
-				value = *requestBody.CorrectedValue
-			}
-			verifier := requestBody.VerifierID
-			if _, err := services.FeedForkField(h.DB, veh.BuildKey, veh.Make, veh.Model,
-				entry.FieldName, value, entry.OriginSerial, "verified", &verifier); err != nil {
-				log.Printf("fork feed on verify failed for %s.%s: %v", veh.BuildKey, entry.FieldName, err)
-			}
+	// Feed verified fork-field values into the build-number range engine. Verification is
+	// the fork gate for agents (trusted or not). FeedForkField no-ops for build-key fields.
+	var veh models.Vehicle
+	if err := h.DB.First(&veh, entry.VehicleID).Error; err == nil {
+		value := entry.NewValue
+		if requestBody.CorrectedValue != nil {
+			value = *requestBody.CorrectedValue
+		}
+		verifier := requestBody.VerifierID
+		if _, err := services.FeedForkField(h.DB, veh.BuildKey, veh.Make, veh.Model,
+			entry.FieldName, value, entry.OriginSerial, "verified", &verifier); err != nil {
+			log.Printf("fork feed on verify failed for %s.%s: %v", veh.BuildKey, entry.FieldName, err)
 		}
 	}
 

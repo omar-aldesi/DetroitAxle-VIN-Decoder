@@ -17,10 +17,12 @@ type ForkHandler struct {
 	DB *gorm.DB
 }
 
-// isTrustedUser reports whether a user may write authoritative fork data. Same notion the
-// edit path uses: any non-agent, or an explicitly trusted agent.
-func isTrustedUser(u *models.User) bool {
-	return u != nil && (u.Role != "agent" || u.IsTrusted)
+// canWriteForkDirectly reports whether a user may write to the fork engine without going
+// through the verification queue. DNR and admin use the direct fork endpoints as
+// authoritative workspace tools. Agents — trusted or not — must have fork-field edits
+// verified before they reach the engine (see UpdateVehicle + VerifyEntry).
+func canWriteForkDirectly(u *models.User) bool {
+	return u != nil && (u.Role == "dnr" || u.Role == "admin")
 }
 
 // GetForkData returns the build-number range data for a VIN or build key.
@@ -97,8 +99,6 @@ func (h *ForkHandler) GetForkData(c *gin.Context) {
 	helpers.OK(c, resp)
 }
 
-// ─── write endpoints (trusted users only) ───────────────────────────────────
-
 type forkPointRequest struct {
 	FieldKey string `json:"field_key" binding:"required"`
 	Value    string `json:"value" binding:"required"`
@@ -109,8 +109,8 @@ type forkPointRequest struct {
 //	POST /api/fork/:vin/point   { field_key, value }
 func (h *ForkHandler) RecordForkPoint(c *gin.Context) {
 	user := auth.CurrentUser(c)
-	if !isTrustedUser(user) {
-		helpers.Fail(c, http.StatusForbidden, "only trusted users can record fork data")
+	if !canWriteForkDirectly(user) {
+		helpers.Fail(c, http.StatusForbidden, "only DNR team members can record fork data directly")
 		return
 	}
 
@@ -159,6 +159,7 @@ type forkRangeRequest struct {
 	Value       string `json:"value" binding:"required"`
 	SerialStart int64  `json:"serial_start"`
 	SerialEnd   *int64 `json:"serial_end"` // nil = open-ended
+	Base        bool   `json:"base"`       // build-key-wide gap fill; never trims existing ranges
 }
 
 // RecordForkRange records an authoritative manual span (no two-point rule).
@@ -166,8 +167,8 @@ type forkRangeRequest struct {
 //	POST /api/fork/:vin/range   { field_key, value, serial_start, serial_end? }
 func (h *ForkHandler) RecordForkRange(c *gin.Context) {
 	user := auth.CurrentUser(c)
-	if !isTrustedUser(user) {
-		helpers.Fail(c, http.StatusForbidden, "only trusted users can record fork data")
+	if !canWriteForkDirectly(user) {
+		helpers.Fail(c, http.StatusForbidden, "only DNR team members can record fork data directly")
 		return
 	}
 
@@ -208,11 +209,20 @@ func (h *ForkHandler) RecordForkRange(c *gin.Context) {
 	}
 
 	engine := services.NewForkEngine(services.NewGormForkStore(h.DB))
-	outcome, err := engine.RecordRange(services.RangeInput{
+	input := services.RangeInput{
 		BuildKey: buildKey, SerialStart: req.SerialStart, SerialEnd: req.SerialEnd,
 		FieldKey: req.FieldKey, Value: req.Value, Source: user.Role, Verified: true,
 		ActorID: &user.ID, Make: veh.Make, Model: veh.Model,
-	})
+	}
+	var outcome services.ForkOutcome
+	var err error
+	if req.Base {
+		// Build-key-wide default: fills uncovered spans, keeps confirmed ranges.
+		outcome, err = engine.RecordBaseRange(input)
+	} else {
+		// Explicit span: authoritative, trims whatever it overlaps.
+		outcome, err = engine.RecordRange(input)
+	}
 	if err != nil {
 		helpers.Fail(c, http.StatusInternalServerError, err.Error())
 		return
@@ -225,12 +235,7 @@ func (h *ForkHandler) RecordForkRange(c *gin.Context) {
 	helpers.OK(c, gin.H{"outcome": outcome, "build_key": buildKey, "field_key": req.FieldKey})
 }
 
-// BackfillLegacy seeds the range engine from existing VERIFIED data (rule #2: unverified
-// values "don't exist", so they are skipped). For each global fork field it takes the
-// latest verified value per vehicle and writes it as a manual base range (build-key-wide,
-// source "legacy"). Idempotent — a manual base range simply gets rewritten on re-run.
-//
-//	POST /api/admin/fork/backfill   (admin only, enforced by the route)
+// POST /api/admin/fork/backfill — seed fork ranges from verified legacy data (admin only).
 func (h *ForkHandler) BackfillLegacy(c *gin.Context) {
 	var keys []string
 	if err := h.DB.Model(&models.ForkField{}).
@@ -270,11 +275,12 @@ func (h *ForkHandler) BackfillLegacy(c *gin.Context) {
 				skipped++
 				continue
 			}
-			outcome, err := engine.RecordRange(services.RangeInput{
+			// Gap-filling base range: safe to re-run, never erases existing fork data.
+			outcome, err := engine.RecordBaseRange(services.RangeInput{
 				BuildKey: veh.BuildKey, SerialStart: 0, SerialEnd: nil, FieldKey: key,
 				Value: r.NewValue, Source: "legacy", Verified: true, Make: veh.Make, Model: veh.Model,
 			})
-			if err == nil && outcome == services.OutcomeManualRange {
+			if err == nil && outcome == services.OutcomeBaseRange {
 				imported++
 			} else {
 				skipped++

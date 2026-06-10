@@ -307,6 +307,9 @@ func (h *ImportHandler) processVIN(ctx context.Context, rawVIN string, skipExist
 		result.Make = vehicle.Make
 		result.Model = vehicle.Model
 		result.Year = vehicle.Year
+		if err := services.RecordKnownVIN(h.DB, vehicle.BuildKey, vin); err != nil {
+			log.Printf("known vin record failed for import %s (non-fatal): %v", vin, err)
+		}
 	}
 
 	result.DurationMs = time.Since(start).Milliseconds()

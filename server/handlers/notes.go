@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"log"
-	dto "main/DTO"
+	dto "main/dto"
 	"main/auth"
 	"main/helpers"
 	"main/models"

@@ -219,10 +219,22 @@ Result.Outcome ∈ { Ignored, NotForkField, Pending, RangeCreated, Reinforced, F
    - **no covering range** → if there are now **≥2 agreeing pending points** that are all
      uncovered → create a **confirmed `vin` range** spanning their `[min, max]`, delete the
      consumed points → `RangeCreated`. Otherwise store the point and → `Pending` (rule #1).
-   - Points that would straddle a different-valued range boundary are left pending (no
-     overlapping range is ever created); the reconciliation worker resolves these later.
+   - Agreeing uncovered points are grouped by gap segment (no existing range between
+     them); each gap needs its own two agreeing sightings, so a formed range never
+     straddles an existing range. Re-verifying the same VIN upserts the sighting (the
+     corrected value replaces the old one). Pending points later covered by an agreeing
+     range are absorbed automatically.
 
 ### 6.2 `RecordRange` — an explicit human/manual span
+
+There are two build-key-wide write modes with different authority:
+
+- **`RecordRange`** (explicit span): authoritative — overlapping ranges are trimmed or
+  removed; the manual span wins. Used for deliberate corrections.
+- **`RecordBaseRange`** (build-key-wide default): non-destructive — fills only the serial
+  gaps with no existing range data. Used by the verify path when an edit has no origin
+  serial, by legacy backfill, and by the DNR "all builds" entry (unless the user opts into
+  overwrite). Safe to re-run.
 
 ```
 RecordRange(BuildKey, SerialStart, SerialEnd int64, FieldKey, Value, Source string,
@@ -295,8 +307,10 @@ bulk import of an existing DB:
 `UpdateVehicle` becomes **tier-aware**:
 
 1. For each edited field, ask the registry: fork field for this make/model?
-2. **Fork field →** `RecordPoint` (serial from the VIN; `Verified` from the role/verify
-   step). Unverified follows rule #2 — proposal only, no structural effect.
+2. **Fork field →** `RecordPoint` (serial from the VIN). **DNR/admin** feed the engine
+   immediately; **agents** (trusted or not) update the column + history only — the engine
+   is fed when an admin verifies the edit (`VerifyEntry`). Unverified agent data never
+   touches the engine (rule #2).
 3. **Build-key field →** unchanged: update the `vehicles` column + history as today.
 
 `vehicle_field_history` gains `origin_serial` + `tier` to record range-scoped vs. group-wide.
@@ -310,8 +324,9 @@ Consistent with rule #2:
 1. For each existing vehicle, for each of the six build-number columns
    (`brake_code, front_rotor_size, rear_rotor_size, front_spring_type, rear_spring_type,
    steering_type`): if non-empty **and already verified** (latest history entry verified) →
-   seed a **manual base range** (`serial_start = 0`, `serial_end = NULL`, origin
-   `"manual"`, source `"legacy"`). Otherwise drop it (unverified ⇒ "did not exist").
+   seed a **gap-filling base range** (`RecordBaseRange`: fills only spans with no existing
+   range data, origin `"manual"`, source `"legacy"`; safe to re-run — it never erases
+   observed forks). Otherwise drop it (unverified ⇒ "did not exist").
 2. Keep the six columns physically present, **read-only backup**, for one release; reads
    come from `Resolve`.
 3. A later release removes the columns once `Resolve` is the confirmed source of truth.
@@ -345,9 +360,10 @@ Nothing *verified* is lost, nothing *unverified* enters, reversible.
     manual ranges + trim/precedence, reinforce, normalization, unverified no-op.
 - **Phase 2 — Tier-aware edit dispatch. ✅ DONE (additive, non-breaking).**
   - `vehicle_field_history` gains `origin_serial` + `tier`.
-  - `UpdateVehicle`: fork-field edits tagged `build_number`; trusted ones feed the engine
-    (`FeedForkField`). Existing column writes/UI behavior unchanged (dual-write transition).
-  - `VerifyEntry`: verifying a previously-untrusted fork-field entry feeds the engine.
+  - `UpdateVehicle`: fork-field edits tagged `build_number`; DNR/admin feed the engine
+    immediately (`FeedForkField`). Agent edits wait for verification.
+  - `VerifyEntry`: verifying any fork-field entry feeds the engine (verification is the
+    fork gate — trust status does not matter).
   - Read endpoint `GET /api/fork/:vin` (build-key field→ranges view + per-VIN resolve).
   - **Deferred:** the §9 backfill of verified legacy column values — will be an explicit
     admin action (Phase 4), so the engine starts clean and fills via edits/verifies.
@@ -358,15 +374,15 @@ Nothing *verified* is lost, nothing *unverified* enters, reversible.
   - `GetVehicle` annotates each note's `scope` for the VIN being viewed; all notes still
     returned. (Frontend rendering of the ⚠ badge is part of the later frontend doc.)
 - **Phase 4 — Sources & write endpoints. ✅ DONE (core).**
-  - `POST /api/fork/:vin/point` — a verified VIN sighting (two-point rule). Trusted-only.
-  - `POST /api/fork/:vin/range` — an authoritative manual span (DNR use). Trusted-only.
+  - `POST /api/fork/:vin/point` — a verified VIN sighting (two-point rule). DNR/admin only.
+  - `POST /api/fork/:vin/range` — an authoritative manual span. DNR/admin only.
   - `GET /api/fork/:vin` now also returns `pending` (per-field un-absorbed sightings).
   - **Deferred:** admin legacy-column backfill (needs the verified-only vs. import-all
     policy decided) and admin "rebuild ranges".
 - **Phase 5 — Reconciliation worker** (later) — scans split conflicts, offline rebuild.
 - **Frontend — in progress.**
   - DNR `BuildNumberPanel`: point + range entry, pending/range display.
-  - Vehicle `BuildNumberSpecs`: VIN resolve, confidence tags, trusted per-VIN edit.
+  - Vehicle `BuildNumberSpecs`: VIN resolve, confidence tags (agent edits via verify queue).
   - `NoteCard`: "Check VIN" scope badge (Phase 3).
   - **Deferred:** admin legacy-column backfill UI, fork-aware DNR queue completeness stats.
 

@@ -48,9 +48,7 @@ type FieldRange struct {
 	UpdatedAt     time.Time `gorm:"column:updated_at"`
 }
 
-// FieldPoint is a single verified VIN sighting that has not yet been absorbed into a range
-// (rule #1: a range needs >=2 agreeing points). This is transient working state, NOT a
-// per-VIN audit log — a point is deleted once it forms or reinforces a range.
+// FieldPoint is a verified VIN sighting not yet absorbed into a range.
 type FieldPoint struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement"`
 	BuildKey  string    `gorm:"column:build_key;not null;uniqueIndex:idx_fieldpoint_key,priority:1;index:idx_fieldpoint_lookup,priority:1"`

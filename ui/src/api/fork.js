@@ -8,12 +8,12 @@ import client from "./client";
        serial?, resolved?:{field:{value, confidence, observations, ...}} } */
 export const getForkData = (vinOrKey) => client.get(`/fork/${vinOrKey}`);
 
-/* POST /api/fork/:vin/point  { field_key, value }   — a verified single VIN sighting
-   (full 17-char VIN required; two-point rule applies) */
+/* POST /api/fork/:vin/point  { field_key, value }   — DNR/admin only; writes directly
+   to the fork engine (full 17-char VIN required; two-point rule applies) */
 export const recordForkPoint = (vin, body) =>
   client.post(`/fork/${vin}/point`, body);
 
 /* POST /api/fork/:vin/range  { field_key, value, serial_start, serial_end|null }
-   — an authoritative manual span (DNR); no two-point rule */
+   — DNR/admin only; authoritative manual span (no verification, no two-point rule) */
 export const recordForkRange = (vinOrKey, body) =>
   client.post(`/fork/${vinOrKey}/range`, body);

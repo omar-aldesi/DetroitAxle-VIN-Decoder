@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"fmt"
-	dto "main/DTO"
+	dto "main/dto"
 	"main/helpers"
 	"main/models"
 	"net/http"
