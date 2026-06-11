@@ -4,7 +4,15 @@ import { Clock, ArrowRight, X, ShieldCheck, ShieldAlert, Trash2 } from "lucide-r
 import { useAuth } from "../contexts/AuthContext";
 import { deleteHistoryEntry } from "../api/history";
 
-export default function FieldHistoryIndicator({ fieldName, history = [], vin }) {
+export default function FieldHistoryIndicator({
+  fieldName,
+  history = [],
+  vin,
+  /** "below" (default) | "above" — use "above" when the popover would be clipped */
+  placement = "below",
+  /** "start" (default) | "end" — align popover to trigger's left or right edge */
+  align = "start",
+}) {
   const entries = history.filter((h) => h.field_name === fieldName);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState(null); // id currently showing confirm
@@ -63,15 +71,24 @@ export default function FieldHistoryIndicator({ fieldName, history = [], vin }) 
       {/* ── Popover ── */}
       {open && (
         <div
-          className="absolute left-0 top-8 z-50 w-80 rounded-xl border border-border-subtle bg-bg-card shadow-card"
+          className={`absolute z-[200] w-80 rounded-xl border border-border-subtle bg-bg-card shadow-card ${
+            placement === "above" ? "bottom-full mb-2" : "top-full mt-2"
+          } ${align === "end" ? "right-0" : "left-0"}`}
           style={{
-            animation: "fhi-drop 140ms cubic-bezier(0.16,1,0.3,1) both",
+            animation:
+              placement === "above"
+                ? "fhi-rise 140ms cubic-bezier(0.16,1,0.3,1) both"
+                : "fhi-drop 140ms cubic-bezier(0.16,1,0.3,1) both",
           }}
         >
           <style>{`
             @keyframes fhi-drop {
               from { opacity: 0; transform: translateY(-6px) scale(0.97); }
               to   { opacity: 1; transform: translateY(0)   scale(1);    }
+            }
+            @keyframes fhi-rise {
+              from { opacity: 0; transform: translateY(6px) scale(0.97); }
+              to   { opacity: 1; transform: translateY(0)  scale(1);    }
             }
           `}</style>
 

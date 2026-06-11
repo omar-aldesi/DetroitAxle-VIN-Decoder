@@ -4,20 +4,27 @@ import (
 	"main/auth"
 	"main/handlers"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 )
 
 func Setup(r *gin.Engine, db *gorm.DB) {
+	_ = godotenv.Load()
+
 	vehicleHandler := &handlers.VehicleHandler{DB: db}
 	authHandler := &handlers.AuthHandler{DB: db}
 	notesHandler := &handlers.NotesHandler{DB: db}
 	categoriesHandler := &handlers.CategoryHandler{DB: db}
 	adminHandler := &handlers.AdminHandler{DB: db}
 	historyHandler := &handlers.HistoryHandler{DB: db}
-	dnrHandler   := &handlers.DNRHandler{DB: db}
+	dnrHandler := &handlers.DNRHandler{DB: db}
 	partsHandler := &handlers.PartsHandler{DB: db}
+	importHandler := &handlers.ImportHandler{DB: db}
+	gmHandler := &handlers.GMHandler{DB: db}
+	forkHandler := &handlers.ForkHandler{DB: db}
 
 	base := r.Group("/api")
 
@@ -28,6 +35,16 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 		api.PATCH("/update/:vin", vehicleHandler.UpdateVehicle)
 		api.GET("/id/:id", vehicleHandler.GetVehicleById)
 		api.GET("/vehicles", vehicleHandler.ListVehicles)
+
+		// GM Parts Giant — live RPO/build-option lookup for a specific VIN.
+		// Not persisted; data is VIN-specific and must not be stored under a build key.
+		api.GET("/gm/decode/:vin", gmHandler.DecodeGMLive)
+
+		// Build-number fork/range data for a VIN or build key.
+		api.GET("/fork/:vin", forkHandler.GetForkData)
+		// Write paths (DNR/admin only — agents reach the engine via verify):
+		api.POST("/fork/:vin/point", forkHandler.RecordForkPoint) // a verified VIN sighting
+		api.POST("/fork/:vin/range", forkHandler.RecordForkRange) // an authoritative manual span
 	}
 
 	a := base.Group("/auth")
@@ -59,6 +76,9 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 
 	admin := base.Group("/admin", auth.RequireAuth(db), auth.RequireAdmin)
 	{
+		// One-time seed of the fork engine from existing verified data.
+		admin.POST("/fork/backfill", forkHandler.BackfillLegacy)
+
 		admin.GET("/stats", adminHandler.AdminStatus)
 		admin.GET("/users", adminHandler.ListUsers)
 		admin.PATCH("/users/:id", adminHandler.UpdateUser)
@@ -86,25 +106,41 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 		dnr.POST("/vehicles", dnrHandler.CreateVehicle)
 	}
 
+	// Bulk VIN import — admin and DNR team
+	importGroup := base.Group("/import", auth.RequireAuth(db), auth.RequireDNR)
+	{
+		importGroup.POST("/", importHandler.StartImport)
+		importGroup.GET("/:job_id", importHandler.GetImportJob)
+		importGroup.DELETE("/:job_id", importHandler.CancelImport)
+	}
+
 	// Parts catalog — read: any authenticated user; write: handled inside handler
 	parts := base.Group("/parts", auth.RequireAuth(db))
 	{
-		parts.GET("/",                    partsHandler.ListParts)
-		parts.GET("/categories",          partsHandler.ListCategories)
-		parts.GET("/by-vehicle/:vin",     partsHandler.GetCompatibleParts)
-		parts.GET("/:id",                 partsHandler.GetPart)
-		parts.POST("/",                   partsHandler.CreatePart)
-		parts.PATCH("/:id",               partsHandler.UpdatePart)
-		parts.DELETE("/:id",              partsHandler.DeletePart)
-		parts.POST("/:id/rules",          partsHandler.AddRule)
-		parts.PATCH("/:id/rules/:rule_id",partsHandler.UpdateRule)
-		parts.DELETE("/:id/rules/:rule_id",partsHandler.DeleteRule)
-		parts.GET("/:id/vehicles",         partsHandler.GetCompatibleVehicles)
-		parts.POST("/:id/clone",           partsHandler.ClonePart)
+		parts.GET("/", partsHandler.ListParts)
+		parts.GET("/categories", partsHandler.ListCategories)
+		parts.GET("/by-vehicle/:vin", partsHandler.GetCompatibleParts)
+		parts.GET("/:id", partsHandler.GetPart)
+		parts.POST("/", partsHandler.CreatePart)
+		parts.PATCH("/:id", partsHandler.UpdatePart)
+		parts.DELETE("/:id", partsHandler.DeletePart)
+		parts.POST("/:id/rules", partsHandler.AddRule)
+		parts.PATCH("/:id/rules/:rule_id", partsHandler.UpdateRule)
+		parts.DELETE("/:id/rules/:rule_id", partsHandler.DeleteRule)
+		parts.GET("/:id/vehicles", partsHandler.GetCompatibleVehicles)
+		parts.POST("/:id/clone", partsHandler.ClonePart)
 	}
 
 	// Serve frontend
-	const frontendDir = "/home/developer/frontend"
+	_ = godotenv.Load()
+	debug := false
+	if val := os.Getenv("DEBUG"); val != "" {
+		debug, _ = strconv.ParseBool(val)
+	}
+	frontendDir := "/home/developer/frontend"
+	if debug {
+		frontendDir = "../ui"
+	}
 	r.Static("/assets", frontendDir+"/assets")
 	r.StaticFile("/", frontendDir+"/index.html")
 	r.NoRoute(func(c *gin.Context) {

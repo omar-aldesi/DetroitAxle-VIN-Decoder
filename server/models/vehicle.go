@@ -43,6 +43,11 @@ type VehicleFieldHistory struct {
 	VerifierID *uint  `gorm:"index"`
 	Source     string `gorm:"column:source;size:500"` // where this data came from (DNR use)
 
+	// Build-number fork system: which serial this edit was made against (nil = the
+	// edit was build-key-wide), and which tier the field belongs to.
+	OriginSerial *int64 `gorm:"column:origin_serial"`
+	Tier         string `gorm:"column:tier;size:20"` // "build_key" | "build_number" | ""
+
 	Vehicle *Vehicle `gorm:"foreignKey:VehicleID"`
 }
 
@@ -69,6 +74,10 @@ type AgentNote struct {
 
 	IsResolved  bool    `gorm:"not null;default:false"`
 	ResolveNote *string `gorm:"size:1000"`
+
+	// Build-number the note was entered against (nil = entered build-key-wide). Used to
+	// compute whether the note applies to the VIN being viewed (see services.NoteScope).
+	OriginSerial *int64 `gorm:"column:origin_serial"`
 }
 type Vehicle struct {
 	ID                 uint   `gorm:"primaryKey;autoIncrement"`
@@ -99,20 +108,24 @@ type Vehicle struct {
 	FrontBrakeType string `gorm:"column:front_brake_type"`
 	RearBrakeType  string `gorm:"column:rear_brake_type"`
 
-	RearSpringType  string `gorm:"column:rear_spring_type"`
-	FrontSpringType string `gorm:"column:front_spring_type"`
-
-	SteeringType string `gorm:"column:steering_type"`
-	BrakeCode    string `gorm:"column:brake_code"`
-
-	FrontRotorSize string `gorm:"column:front_rotor_size"`
-	RearRotorSize  string `gorm:"column:rear_rotor_size"`
+	// Build-NUMBER-tier fields (brake code, rotor sizes, suspension, steering) are not
+	// stored here — they're managed entirely by the fork/range engine (field_range /
+	// field_point) and resolved per-VIN via services.ForkEngine.Resolve.
 
 	CustomFields datatypes.JSONMap `gorm:"column:custom_fields;type:jsonb"`
 
 	BrakeSystemType     string `gorm:"column:brake_system_type"`
 	Doors               string `gorm:"column:doors"`
 	EngineConfiguration string `gorm:"column:engine_configuration"`
+
+	// GMChecked is true once we've attempted GM Parts Giant enrichment for this
+	// build key (whether GM had data or not). Lets us backfill GM build-key-stable
+	// fields exactly once for GM cars, and filter GM cars still pending lookup.
+	//
+	// NOTE: GM's per-VIN RPO data (brake/option codes) is NEVER stored — it is
+	// VIN-specific and fetched live via GET /api/gm/decode/:vin. Only VDS-encoded,
+	// build-key-stable GM fields (trim, series, engine) are persisted.
+	GMChecked bool `gorm:"column:gm_checked;default:false;not null"`
 
 	// --- Notes ---
 	Notes []AgentNote `gorm:"foreignKey:VehicleID"`

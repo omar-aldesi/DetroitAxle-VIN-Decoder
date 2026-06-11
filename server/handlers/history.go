@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -11,10 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	dto "main/DTO"
+	dto "main/dto"
 	"main/auth"
 	"main/helpers"
 	"main/models"
+	"main/services"
 )
 
 type HistoryHandler struct {
@@ -140,18 +142,29 @@ func (h *HistoryHandler) DeleteEntry(c *gin.Context) {
 		return
 	}
 
+	var veh models.Vehicle
+	if err := h.DB.First(&veh, entry.VehicleID).Error; err != nil {
+		helpers.Fail(c, http.StatusInternalServerError, "failed to load vehicle")
+		return
+	}
+	// Build-number-tier (fork field) values are never columns on `vehicles` — there's
+	// nothing to revert there; deleting the entry is enough to drop it from the queue.
+	isForkField := services.IsForkFieldKey(h.DB, veh.Make, veh.Model, entry.FieldName)
+
 	err = h.DB.Transaction(func(tx *gorm.DB) error {
-		// Revert the vehicle field to its previous value.
-		// Use raw Exec instead of Updates(map) so GORM never skips the value
-		// when OldValue is an empty string or other zero value — which is the
-		// exact case when an agent filled a previously-blank field and then
-		// wants to undo that change.
-		sql := fmt.Sprintf(
-			`UPDATE vehicles SET %s = $1, updated_at = NOW() WHERE id = $2`,
-			entry.FieldName,
-		)
-		if err := tx.Exec(sql, entry.OldValue, entry.VehicleID).Error; err != nil {
-			return err
+		if !isForkField {
+			// Revert the vehicle field to its previous value.
+			// Use raw Exec instead of Updates(map) so GORM never skips the value
+			// when OldValue is an empty string or other zero value — which is the
+			// exact case when an agent filled a previously-blank field and then
+			// wants to undo that change.
+			sql := fmt.Sprintf(
+				`UPDATE vehicles SET %s = $1, updated_at = NOW() WHERE id = $2`,
+				entry.FieldName,
+			)
+			if err := tx.Exec(sql, entry.OldValue, entry.VehicleID).Error; err != nil {
+				return err
+			}
 		}
 		// Remove the history entry
 		return tx.Delete(&entry).Error
@@ -199,12 +212,6 @@ func (h *HistoryHandler) VerifyEntry(c *gin.Context) {
 		"abs":                  true,
 		"front_brake_type":     true,
 		"rear_brake_type":      true,
-		"rear_spring_type":     true,
-		"front_spring_type":    true,
-		"steering_type":        true,
-		"brake_code":           true,
-		"front_rotor_size":     true,
-		"rear_rotor_size":      true,
 		"brake_system_type":    true,
 		"doors":                true,
 		"engine_configuration": true,
@@ -221,7 +228,17 @@ func (h *HistoryHandler) VerifyEntry(c *gin.Context) {
 		return
 	}
 
-	if requestBody.CorrectedValue != nil {
+	var veh models.Vehicle
+	if err := h.DB.First(&veh, entry.VehicleID).Error; err != nil {
+		helpers.Fail(c, http.StatusInternalServerError, "failed to load vehicle")
+		return
+	}
+
+	// Build-number-tier (fork field) values are never columns on `vehicles` — a corrected
+	// value for one of these is applied via FeedForkField below, not a raw column update.
+	isForkField := services.IsForkFieldKey(h.DB, veh.Make, veh.Model, entry.FieldName)
+
+	if requestBody.CorrectedValue != nil && !isForkField {
 		if !allowedColumns[entry.FieldName] {
 			helpers.Fail(c, http.StatusBadRequest, fmt.Sprintf("field '%s' is not allowed", entry.FieldName))
 			return
@@ -249,7 +266,7 @@ func (h *HistoryHandler) VerifyEntry(c *gin.Context) {
 			return err
 		}
 
-		if requestBody.CorrectedValue != nil {
+		if requestBody.CorrectedValue != nil && !isForkField {
 			// Use raw Exec so an empty corrected value is applied correctly
 			sql := fmt.Sprintf(
 				`UPDATE vehicles SET %s = $1, updated_at = NOW() WHERE id = $2`,
@@ -266,6 +283,20 @@ func (h *HistoryHandler) VerifyEntry(c *gin.Context) {
 	if err != nil {
 		helpers.Fail(c, http.StatusInternalServerError, "failed to apply updates")
 		return
+	}
+
+	// Feed verified fork-field values into the build-number range engine. Verification is
+	// the fork gate for agents (trusted or not). FeedForkField no-ops for build-key fields.
+	if isForkField {
+		value := entry.NewValue
+		if requestBody.CorrectedValue != nil {
+			value = *requestBody.CorrectedValue
+		}
+		verifier := requestBody.VerifierID
+		if _, err := services.FeedForkField(h.DB, veh.BuildKey, veh.Make, veh.Model,
+			entry.FieldName, value, entry.OriginSerial, "verified", &verifier); err != nil {
+			log.Printf("fork feed on verify failed for %s.%s: %v", veh.BuildKey, entry.FieldName, err)
+		}
 	}
 
 	helpers.OK(c, gin.H{

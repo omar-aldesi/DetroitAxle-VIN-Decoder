@@ -34,7 +34,10 @@ function Navbar({ user, logout }) {
                 : []),
               /* DNR data center: dnr and admin */
               ...(user?.isAdmin || user?.isDNR
-                ? [{ to: "/dnr", label: "DNR" }]
+                ? [
+                    { to: "/dnr", label: "DNR" },
+                    { to: "/import", label: "Import" },
+                  ]
                 : []),
               /* Admin dashboard: admin only */
               ...(user?.isAdmin ? [{ to: "/admin", label: "Admin" }] : []),

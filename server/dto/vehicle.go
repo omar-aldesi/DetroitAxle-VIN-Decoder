@@ -3,9 +3,11 @@ package dto
 import "main/models"
 
 type VehicleResponse struct {
-	ID                 uint   `json:"id"`
-	BuildKey           string `json:"build_key"`
-	ExampleBuildNumber string `json:"example_build_number"`
+	ID                 uint     `json:"id"`
+	BuildKey           string   `json:"build_key"`
+	ExampleBuildNumber string   `json:"example_build_number"`
+	ViewedVIN          string   `json:"viewed_vin,omitempty"` // full VIN from this request (17-char lookups)
+	KnownVINs          []string `json:"known_vins,omitempty"` // distinct units seen for this build key
 
 	Year      int    `json:"year"`
 	Make      string `json:"make"`
@@ -30,20 +32,13 @@ type VehicleResponse struct {
 	FrontBrakeType string `json:"front_brake_type"`
 	RearBrakeType  string `json:"rear_brake_type"`
 
-	RearSpringType  string `json:"rear_spring_type"`
-	FrontSpringType string `json:"front_spring_type"`
-
-	SteeringType string `json:"steering_type"`
-	BrakeCode    string `json:"brake_code"`
-
-	FrontRotorSize string `json:"front_rotor_size"`
-	RearRotorSize  string `json:"rear_rotor_size"`
-
 	CustomFields map[string]any `json:"custom_fields"`
 
 	BrakeSystemType     string `json:"brake_system_type"`
 	Doors               string `json:"doors"`
 	EngineConfiguration string `json:"engine_configuration"`
+
+	GMChecked bool `json:"gm_checked"`
 
 	Notes   []NoteResponse    `json:"notes"`
 	History []HistoryResponse `json:"history"`
@@ -71,16 +66,11 @@ func VehicleFromModel(v models.Vehicle) VehicleResponse {
 		ABS:                 v.ABS,
 		FrontBrakeType:      v.FrontBrakeType,
 		RearBrakeType:       v.RearBrakeType,
-		RearSpringType:      v.RearSpringType,
-		FrontSpringType:     v.FrontSpringType,
-		SteeringType:        v.SteeringType,
-		BrakeCode:           v.BrakeCode,
-		FrontRotorSize:      v.FrontRotorSize,
-		RearRotorSize:       v.RearRotorSize,
 		CustomFields:        v.CustomFields,
 		BrakeSystemType:     v.BrakeSystemType,
 		Doors:               v.Doors,
 		EngineConfiguration: v.EngineConfiguration,
+		GMChecked:           v.GMChecked,
 		Notes:               NotesFromModels(v.Notes),
 		History:             HistoryFromModels(v.History),
 	}

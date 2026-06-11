@@ -2,10 +2,11 @@ package handlers
 
 import (
 	"log"
-	dto "main/DTO"
+	dto "main/dto"
 	"main/auth"
 	"main/helpers"
 	"main/models"
+	"main/services"
 	"math"
 	"net/http"
 	"strconv"
@@ -46,6 +47,13 @@ func (h *NotesHandler) AddNote(c *gin.Context) {
 		return
 	}
 
+	// Anchor the note to the build number it was entered against (nil for a 10-char
+	// build-key entry), so we can later tell whether it applies to a given VIN.
+	var originSerial *int64
+	if s, ok := services.SerialFromVIN(vin); ok {
+		originSerial = &s
+	}
+
 	user := auth.CurrentUser(c)
 	note := models.AgentNote{
 		VehicleID:      vehicle.ID,
@@ -55,6 +63,7 @@ func (h *NotesHandler) AddNote(c *gin.Context) {
 		FreeText:       payload.FreeText,
 		PartNumber:     payload.PartNumber,
 		PartCategoryID: payload.PartCategoryID,
+		OriginSerial:   originSerial,
 	}
 
 	if err := h.DB.Create(&note).Error; err != nil {

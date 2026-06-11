@@ -202,6 +202,20 @@ export default function NoteCard({ note, vin, categories }) {
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          {/* Build-number scope — warns when this note may not apply to the viewed VIN */}
+          {note.scope === "warn" && (
+            <span
+              className="badge bg-warn/10 text-warn border border-warn/25"
+              title={
+                note.origin_serial != null
+                  ? `Entered for build number …${String(note.origin_serial).padStart(6, "0")}. It may not apply to the VIN you're viewing.`
+                  : "Entered without a build number — it may not apply to this exact VIN."
+              }
+            >
+              <AlertTriangle className="w-3 h-3" />
+              Check VIN
+            </span>
+          )}
           {/* Dynamic Badge for Note Type / Status */}
           {isListingError ? (
             isResolved ? (

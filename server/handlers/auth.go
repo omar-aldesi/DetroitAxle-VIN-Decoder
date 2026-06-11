@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"main/auth"
 	"main/helpers"
 	"main/models"
@@ -28,10 +29,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var user models.User
 	if err := h.DB.Where("LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)", req.Identifier, req.Identifier).First(&user).Error; err != nil {
 		helpers.Fail(c, 401, "invalid credentials")
+		fmt.Println("invalid credentials: ", req.Identifier)
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.HashedPassword), []byte(req.Password)); err != nil {
 		helpers.Fail(c, 401, "invalid credentials")
+		fmt.Println("invalid credentials: ", req.Password)
 		return
 	}
 

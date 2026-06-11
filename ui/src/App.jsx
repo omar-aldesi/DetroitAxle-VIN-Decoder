@@ -9,6 +9,7 @@ import HistoryPage from "./pages/HistoryPage";
 import ListingErrorsPage from "./pages/ListingErrorsPage";
 import DNRPage from "./pages/DNRPage";
 import PartsPage from "./pages/PartsPage";
+import ImportPage from "./pages/ImportPage";
 
 function ProtectedRoute({ children }) {
   const { token } = useAuth();
@@ -112,6 +113,15 @@ export default function App() {
           </ProtectedRoute>
         }
       />*/}
+
+      <Route
+        path="/import"
+        element={
+          <DNRRoute>
+            <ImportPage />
+          </DNRRoute>
+        }
+      />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
