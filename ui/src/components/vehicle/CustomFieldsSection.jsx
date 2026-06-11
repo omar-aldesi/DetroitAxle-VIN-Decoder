@@ -63,7 +63,7 @@ export function CustomFieldsSection({ customFields, vin }) {
           <span className="section-title">
             <Layers className="w-4 h-4 text-cyan-400" />
             Custom Fields
-            <span className="ml-1.5 text-[10px] font-mono text-txt-muted/40 tabular-nums">
+            <span className="ml-1.5 text-[11px] font-mono text-txt-muted/70 tabular-nums">
               ({entries.length})
             </span>
           </span>

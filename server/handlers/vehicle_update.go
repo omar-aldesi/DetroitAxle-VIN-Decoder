@@ -110,27 +110,54 @@ func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {
 	if s, ok := services.SerialFromVIN(vin); ok {
 		serialPtr = &s
 	}
-	// Fork-field edits to feed the range engine. DNR/admin write directly; agents
-	// (trusted or not) reach the engine only after verification (VerifyEntry).
-	feedsForkOnEdit := user.Role == "dnr" || user.Role == "admin"
-	type forkFeed struct{ field, value string }
-	var forkFeeds []forkFeed
+	// Fork-field edits made on the vehicle page NEVER write to the range engine directly —
+	// regardless of role they are recorded as pending history and only reach the engine once
+	// verified (HistoryHandler.VerifyEntry). This keeps a single verification gate so a range
+	// can never form before every contributing VIN's edit has been confirmed. DNR/admin who
+	// want an authoritative immediate write use the dedicated /fork endpoints instead.
 
-	for fieldName, newVal := range payload {
-		oldVal := currentMap[fieldName]
-		oldStr := fmt.Sprintf("%v", oldVal)
-		newStr := fmt.Sprintf("%v", newVal)
-		if oldStr == newStr {
+	// Build-number-tier (fork field) keys are no longer columns on `vehicles` — they
+	// live in field_range/field_point and are fed through the fork engine below. Split
+	// them out of the payload before it's applied to the `vehicles` table.
+	forkFieldKeys := make(map[string]bool)
+	vehiclePayload := make(map[string]any, len(payload))
+	for fieldName, v := range payload {
+		if services.IsForkFieldKey(h.DB, current.Make, current.Model, fieldName) {
+			forkFieldKeys[fieldName] = true
 			continue
 		}
+		vehiclePayload[fieldName] = v
+	}
+
+	var engine *services.ForkEngine
+	if len(forkFieldKeys) > 0 {
+		engine = services.NewForkEngine(services.NewGormForkStore(h.DB))
+	}
+
+	for fieldName, newVal := range payload {
+		newStr := fmt.Sprintf("%v", newVal)
 
 		tier := "build_key"
 		var entrySerial *int64
-		if services.IsForkFieldKey(h.DB, current.Make, current.Model, fieldName) {
+		var oldStr string
+
+		if forkFieldKeys[fieldName] {
 			tier = "build_number"
 			entrySerial = serialPtr
-			if feedsForkOnEdit {
-				forkFeeds = append(forkFeeds, forkFeed{fieldName, newStr})
+			// Old value comes from the fork engine's resolution for this VIN's
+			// serial, not the `vehicles` row — these fields aren't stored there.
+			if serialPtr != nil {
+				if resolved, err := engine.Resolve(buildKey, *serialPtr, []string{fieldName}); err == nil {
+					oldStr = resolved[fieldName].Value
+				}
+			}
+			if oldStr == newStr {
+				continue
+			}
+		} else {
+			oldStr = fmt.Sprintf("%v", currentMap[fieldName])
+			if oldStr == newStr {
+				continue
 			}
 		}
 
@@ -149,8 +176,8 @@ func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {
 	}
 
 	// 5. Apply update
-	payload["updated_at"] = time.Now()
-	if err := h.DB.Model(&models.Vehicle{}).Where("build_key = ?", buildKey).Updates(payload).Error; err != nil {
+	vehiclePayload["updated_at"] = time.Now()
+	if err := h.DB.Model(&models.Vehicle{}).Where("build_key = ?", buildKey).Updates(vehiclePayload).Error; err != nil {
 		helpers.Fail(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -160,22 +187,6 @@ func (h *VehicleHandler) UpdateVehicle(c *gin.Context) {
 		if err := h.DB.Create(&historyEntries).Error; err != nil {
 			// Non-fatal — update succeeded, just log it
 			log.Printf("failed to write field history for vehicle %s: %v", buildKey, err)
-		}
-	}
-
-	// 6b. Feed DNR/admin fork-field edits into the build-number range engine immediately.
-	// Agent edits (trusted or not) are NOT fed here — they reach the engine only once
-	// verified (see HistoryHandler.VerifyEntry). Non-fatal: a failure never blocks the edit.
-	if len(forkFeeds) > 0 {
-		feedSource := source
-		if feedSource == "" {
-			feedSource = user.Role
-		}
-		for _, f := range forkFeeds {
-			if _, err := services.FeedForkField(h.DB, buildKey, current.Make, current.Model,
-				f.field, f.value, serialPtr, feedSource, &user.ID); err != nil {
-				log.Printf("fork feed failed for %s.%s: %v", buildKey, f.field, err)
-			}
 		}
 	}
 

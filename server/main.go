@@ -5,20 +5,37 @@ import (
 	"main/models"
 	"main/routes"
 	"main/services"
+	"os"
+	"strconv"
 
 	"log"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"gorm.io/gorm"
 )
 
 func main() {
 	// Load .env if present (dev/Air). In production containers env vars
 	// are injected directly — missing .env file is not an error there.
 	_ = godotenv.Load()
-	db, err := config.InitDB()
-	if err != nil {
-		log.Fatal("DB connection failed:", err)
+	debug := false
+	var db *gorm.DB
+	var err error
+	if val := os.Getenv("DEBUG"); val != "" {
+		debug, _ = strconv.ParseBool(val)
+	}
+	if debug == true {
+		db, err = config.InitTestDB()
+		if err != nil {
+			log.Fatal("Test DB connection failed:", err)
+		}
+		db = db.Debug()
+	} else {
+		db, err = config.InitDB()
+		if err != nil {
+			log.Fatal("DB connection failed:", err)
+		}
 	}
 
 	// Migrate your Vin model automatically

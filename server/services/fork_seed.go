@@ -8,9 +8,10 @@ import (
 
 // DefaultForkFields are the build-number-tier fields tracked out of the box (global scope).
 //
-// These MUST be the actual Vehicle column names so the edit path (which routes by the
-// payload's column key) matches the registry and feeds the engine. "front/rear suspension"
-// and "steering" map to the existing columns below.
+// These keys MUST match the field names the edit/verify path receives (the request payload
+// keys from the frontend's FORK_FIELDS, e.g. "brake_code"), since UpdateVehicle and
+// VerifyEntry route by these exact names when feeding the engine. They are NOT columns on
+// `vehicles` — build-number-tier values live only in field_range/field_point.
 var DefaultForkFields = []string{
 	"brake_code",
 	"front_rotor_size",

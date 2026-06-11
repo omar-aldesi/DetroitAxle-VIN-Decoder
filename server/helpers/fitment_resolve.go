@@ -30,13 +30,7 @@ var standardFieldMap = map[string]func(models.Vehicle) string{
 	"abs":              func(v models.Vehicle) string { return v.ABS },
 	"frontbraketype":   func(v models.Vehicle) string { return v.FrontBrakeType },
 	"rearbraketype":    func(v models.Vehicle) string { return v.RearBrakeType },
-	"frontrotorsize":   func(v models.Vehicle) string { return v.FrontRotorSize },
-	"rearrotorsize":    func(v models.Vehicle) string { return v.RearRotorSize },
-	"brakecode":        func(v models.Vehicle) string { return v.BrakeCode },
 	"brakesystemtype":  func(v models.Vehicle) string { return v.BrakeSystemType },
-	"frontspringtype":  func(v models.Vehicle) string { return v.FrontSpringType },
-	"rearspringtype":   func(v models.Vehicle) string { return v.RearSpringType },
-	"steeringtype":     func(v models.Vehicle) string { return v.SteeringType },
 	"gvwr":             func(v models.Vehicle) string { return v.GVWR },
 	"gvwrlbs":          func(v models.Vehicle) string { return v.GVWR },
 }

@@ -17,20 +17,13 @@ func (h *DNRHandler) GetStats(c *gin.Context) {
 
 	total := len(vehicles)
 	var sumComp float64
-	brakeComplete, suspComplete, fullyComplete := 0, 0, 0
+	fullyComplete := 0
 
 	for _, v := range vehicles {
 		pct := completeness(v)
 		sumComp += pct
 		if pct >= 90 {
 			fullyComplete++
-		}
-		if v.FrontBrakeType != "" && v.RearBrakeType != "" &&
-			v.FrontRotorSize != "" && v.RearRotorSize != "" {
-			brakeComplete++
-		}
-		if v.FrontSpringType != "" && v.RearSpringType != "" {
-			suspComplete++
 		}
 	}
 
@@ -58,8 +51,6 @@ func (h *DNRHandler) GetStats(c *gin.Context) {
 		"total_vehicles":      total,
 		"avg_completeness":    avg,
 		"fully_complete":      fullyComplete,
-		"brake_complete":      brakeComplete,
-		"suspension_complete": suspComplete,
 		"fields_filled_today": filledToday,
 		"dnr_fills_today":     dnrToday,
 		"spec_fields_total":   len(dnrSpecFields),

@@ -43,10 +43,10 @@ func TestEnrichExistingWithGM_NoOpGuards(t *testing.T) {
 
 func TestParseGMTrim(t *testing.T) {
 	cases := map[string]string{
-		"Terrain 'SLT' SUV":            "SLT",
+		"Terrain 'SLT' SUV":             "SLT",
 		"Silverado 1500 'LTZ' Crew Cab": "LTZ",
-		"Silverado 1500 Crew Cab":      "", // no quotes → no trim
-		"":                             "",
+		"Silverado 1500 Crew Cab":       "", // no quotes → no trim
+		"":                              "",
 	}
 	for in, want := range cases {
 		if got := parseGMTrim(in); got != want {
@@ -82,14 +82,8 @@ func TestApplyStableFields_FillsStableOnly(t *testing.T) {
 	}
 
 	// Per-VIN fields must NEVER be set from GM, even though BRK/GVW are present.
-	if v.BrakeCode != "" || v.FrontBrakeType != "" || v.RearBrakeType != "" {
-		t.Errorf("brake fields leaked: code=%q front=%q rear=%q", v.BrakeCode, v.FrontBrakeType, v.RearBrakeType)
-	}
 	if v.GVWR != "" {
 		t.Errorf("GVWR leaked from GM: %q", v.GVWR)
-	}
-	if v.SteeringType != "" || v.FrontSpringType != "" || v.RearSpringType != "" {
-		t.Errorf("suspension/steering leaked: steer=%q fs=%q rs=%q", v.SteeringType, v.FrontSpringType, v.RearSpringType)
 	}
 }
 
@@ -126,12 +120,12 @@ func TestFormatAsJSON_FiltersMetadataKeepsRPO(t *testing.T) {
 					{Name: "Engine", Desc: "4 Cyl 2.4L SIDI, DOHC"},
 				},
 				Specification: []gmNameDesc{
-					{Name: "CATALOG", Desc: "TL1-"},                       // metadata → drop
-					{Name: "MD", Desc: "L-"},                              // metadata → drop
-					{Name: "YEAR_FROM", Desc: "2014-"},                    // metadata → drop
+					{Name: "CATALOG", Desc: "TL1-"},                         // metadata → drop
+					{Name: "MD", Desc: "L-"},                                // metadata → drop
+					{Name: "YEAR_FROM", Desc: "2014-"},                      // metadata → drop
 					{Name: "AFT", Desc: "AE8-ADJUSTER FRT ST POWER, 8 WAY"}, // real → keep
-					{Name: "ABS", Desc: "STANDARD"},                       // bare word → keep
-					{Name: "EMPTY", Desc: ""},                             // empty → drop
+					{Name: "ABS", Desc: "STANDARD"},                         // bare word → keep
+					{Name: "EMPTY", Desc: ""},                               // empty → drop
 				},
 			},
 		},

@@ -108,19 +108,9 @@ type Vehicle struct {
 	FrontBrakeType string `gorm:"column:front_brake_type"`
 	RearBrakeType  string `gorm:"column:rear_brake_type"`
 
-	// TRANSITIONAL: the six columns below are build-NUMBER-tier fields now managed by the
-	// fork/range engine (field_range), keyed by these exact column names. They are
-	// dual-written here as a read-only backup during rollout and are slated for removal
-	// once Resolve is the confirmed source of truth. See docs/fork-range-system.md.
-	RearSpringType  string `gorm:"column:rear_spring_type"`
-	FrontSpringType string `gorm:"column:front_spring_type"`
-
-	SteeringType string `gorm:"column:steering_type"`
-	BrakeCode    string `gorm:"column:brake_code"`
-
-	FrontRotorSize string `gorm:"column:front_rotor_size"`
-	RearRotorSize  string `gorm:"column:rear_rotor_size"`
-	// END TRANSITIONAL
+	// Build-NUMBER-tier fields (brake code, rotor sizes, suspension, steering) are not
+	// stored here — they're managed entirely by the fork/range engine (field_range /
+	// field_point) and resolved per-VIN via services.ForkEngine.Resolve.
 
 	CustomFields datatypes.JSONMap `gorm:"column:custom_fields;type:jsonb"`
 

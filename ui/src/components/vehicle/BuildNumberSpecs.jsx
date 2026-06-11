@@ -11,12 +11,11 @@ import {
   Check,
   X,
   Edit3,
-  ShieldCheck,
+  Clock,
 } from "lucide-react";
 import { updateVehicle } from "../../api/vehicles";
 import { getForkData } from "../../api/fork";
 import { useToast } from "../../contexts/ToastContext";
-import { useAuth } from "../../contexts/AuthContext";
 import FieldHistoryIndicator from "../Fieldhistoryindicator.jsx";
 import { FORK_FIELDS, FORK_CONFIDENCE } from "./constants";
 
@@ -38,7 +37,7 @@ export function ConfidenceTag({ tier }) {
   if (!c) return null;
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] font-semibold shrink-0 px-1.5 py-0.5 rounded-md"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold shrink-0 px-1.5 py-0.5 rounded-md"
       style={{
         color: c.color,
         background: `${c.color}18`,
@@ -58,13 +57,13 @@ export function ConfidenceTag({ tier }) {
 export function ForkFieldRow({
   field,
   resolved,
-  columnVal,
   ranges,
   pending,
+  proposed,
+  serial,
   activeVin,
   pageVin,
   history,
-  feedsForkOnEdit,
   onSaved,
 }) {
   const toast = useToast();
@@ -72,46 +71,70 @@ export function ForkFieldRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const list = ranges ?? [];
-  const pendingCount = pending?.length ?? 0;
+  const pendingList = pending ?? [];
+  const pendingCount = pendingList.length;
   const expandable = list.length > 0 || pendingCount > 0;
 
-  // 1) precise value for the active serial (full VIN);
-  // 2) else the value of the single range that covers the whole group;
-  // 3) else "varies" when there are several ranges but no serial to pick one;
-  // 4) else the stored column value (genuinely unverified — no fork data exists).
+  const hasSerial = serial != null && activeVin.length === 17;
+
+  // Resolve the value to show for the viewed VIN, strongest evidence first:
+  //  1) a confirmed range covering this serial (the authoritative answer);
+  //  2) a verified single sighting recorded for this exact serial, still waiting for a
+  //     second matching VIN to confirm a range ("unconfirmed");
+  //  3) an unverified edit saved for this serial, not yet in the engine ("pending review");
+  //  4) build-key view (no serial): the lone range, or "varies" across several ranges.
   const resolvedVal = resolved?.Value ?? null;
-  const singleRange = !resolvedVal && list.length === 1 ? list[0] : null;
-  const variesNoSerial = !resolvedVal && list.length > 1;
-  const fallback =
-    !resolvedVal && list.length === 0 && columnVal ? String(columnVal) : null;
 
-  const value = resolvedVal ?? singleRange?.Value ?? null;
-  const valueTier = resolvedVal
-    ? resolved.Confidence
-    : singleRange
-      ? singleRange.Origin === "manual"
-        ? "manual"
-        : "observed"
-      : null;
-  const display = value ?? fallback;
+  const pointForSerial = hasSerial
+    ? pendingList.find((p) => Number(p.serial) === Number(serial))
+    : null;
 
-  const isVerified = history.some(
-    (h) => h.field_name === field.key && h.is_verified === true,
-  );
-  const isTeamSet =
-    resolved?.Confidence === "manual" || singleRange?.Origin === "manual";
-  const canEdit =
-    activeVin.length === 17 &&
-    !isVerified &&
-    (feedsForkOnEdit || !isTeamSet);
+  // Latest unverified edit entered for this exact serial (from the fork endpoint's
+  // `proposed` list — build-number history is not part of the vehicle payload).
+  const unverifiedEdit = hasSerial
+    ? (proposed ?? []).find((p) => Number(p.serial) === Number(serial))
+    : null;
+
+  const singleRange =
+    !resolvedVal && !hasSerial && list.length === 1 ? list[0] : null;
+  const variesNoSerial = !resolvedVal && !hasSerial && list.length > 1;
+
+  // state: resolved | point | pending | single | none
+  let value = null;
+  let state = "none";
+  let valueTier = null;
+  if (resolvedVal) {
+    value = resolvedVal;
+    state = "resolved";
+    valueTier = resolved.Confidence;
+  } else if (pointForSerial) {
+    value = pointForSerial.value;
+    state = "point";
+  } else if (unverifiedEdit) {
+    value = unverifiedEdit.value;
+    state = "pending";
+  } else if (singleRange) {
+    value = singleRange.Value;
+    state = "single";
+    // Confidence is serial-specific, and there's no serial in the build-key view. A manual
+    // span is team-set across the whole group (serial-independent), so that label is safe;
+    // a VIN-origin range stays neutral ("by build #") until a full VIN is entered.
+    valueTier = singleRange.Origin === "manual" ? "manual" : null;
+  }
+  const display = value;
+
+  const isManual = state === "resolved" && resolved.Origin === "manual";
+  // A serial whose value is confirmed into a range or already recorded as a verified
+  // sighting is locked from vehicle-page editing — correct it via the DNR page. An
+  // unverified pending edit can still be amended before it's verified.
+  const lockedConfirmed = state === "resolved" || state === "point";
+  const canEdit = hasSerial && !isManual && !lockedConfirmed;
 
   const saveMut = useMutation({
     mutationFn: (v) => updateVehicle(activeVin, { [field.key]: v }),
     onSuccess: () => {
       toast(
-        feedsForkOnEdit
-          ? `${field.label} updated`
-          : `${field.label} saved — build-number range applies after verification`,
+        `${field.label} saved for this VIN — applies to the build-number range after an admin verifies it`,
         "success",
       );
       setEditing(false);
@@ -137,8 +160,8 @@ export function ForkFieldRow({
   return (
     <div className="border-b border-border-subtle/30 last:border-0 group">
       {/* Main row */}
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <span className="spec-label shrink-0 w-28">{field.label}</span>
+      <div className="flex items-center gap-3 px-3 py-3">
+        <span className="spec-label shrink-0 w-32">{field.label}</span>
         <div className="flex-1 min-w-0 flex items-center justify-end gap-2">
           {editing ? (
             <>
@@ -174,7 +197,7 @@ export function ForkFieldRow({
             </>
           ) : variesNoSerial ? (
             <span
-              className="text-[11px] text-txt-muted/70 italic shrink-0"
+              className="text-xs text-txt-muted italic shrink-0"
               title="This field changes across build numbers — enter a full VIN to see the exact value, or expand to view the ranges."
             >
               varies by build #
@@ -182,32 +205,45 @@ export function ForkFieldRow({
           ) : value ? (
             <>
               <span
-                className={`text-sm font-semibold text-txt-primary text-right truncate ${
+                className={`text-[15px] font-semibold text-txt-primary text-right truncate ${
                   field.mono ? "font-mono tracking-wider" : ""
                 }`}
               >
                 {value}
               </span>
-              <ConfidenceTag tier={valueTier} />
-            </>
-          ) : fallback ? (
-            <>
-              <span
-                className={`text-sm font-medium text-txt-secondary text-right truncate ${
-                  field.mono ? "font-mono tracking-wider" : ""
-                }`}
-              >
-                {fallback}
-              </span>
-              <span
-                className="text-[10px] font-medium text-txt-muted/50 shrink-0 italic"
-                title="Stored value — not yet confirmed as a build-number range"
-              >
-                unverified
-              </span>
+              {(state === "resolved" || state === "single") && valueTier && (
+                <ConfidenceTag tier={valueTier} />
+              )}
+              {state === "single" && !valueTier && (
+                <span
+                  title="From a build-number range — enter a full VIN above to see this value's confidence for that specific unit."
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-txt-muted/10 border border-txt-muted/25 text-txt-secondary text-[11px] font-semibold shrink-0"
+                >
+                  <GitBranch className="w-3 h-3" />
+                  By build #
+                </span>
+              )}
+              {state === "point" && (
+                <span
+                  title="Recorded for this VIN — add a second matching VIN with the same value to confirm a build-number range."
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-500 text-[11px] font-semibold shrink-0"
+                >
+                  <Info className="w-3 h-3" />
+                  Unconfirmed
+                </span>
+              )}
+              {state === "pending" && (
+                <span
+                  title="Saved for this VIN — applies to the build-number range once an admin verifies it."
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-txt-muted/10 border border-txt-muted/25 text-txt-secondary text-[11px] font-semibold shrink-0"
+                >
+                  <Clock className="w-3 h-3" />
+                  Pending review
+                </span>
+              )}
             </>
           ) : (
-            <span className="text-xs text-txt-muted/25 font-mono select-none">
+            <span className="text-sm text-txt-muted/30 font-mono select-none">
               —
             </span>
           )}
@@ -219,24 +255,6 @@ export function ForkFieldRow({
               placement="above"
               align="end"
             />
-          )}
-          {!editing && isVerified && (
-            <span
-              title="This value has been verified and locked"
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-success/10 border border-success/25 text-success text-[10px] font-semibold shrink-0"
-            >
-              <ShieldCheck className="w-3 h-3" />
-              Verified
-            </span>
-          )}
-          {!editing && isTeamSet && !feedsForkOnEdit && (
-            <span
-              title="Set by the DNR team — agents cannot override"
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-sky-500/10 border border-sky-500/25 text-sky-500 text-[10px] font-semibold shrink-0"
-            >
-              <ShieldCheck className="w-3 h-3" />
-              Locked
-            </span>
           )}
           {!editing && canEdit && (
             <button
@@ -277,44 +295,60 @@ export function ForkFieldRow({
           {list.length > 0 ? (
             list.map((r, i) => (
               <div key={i} className="flex items-center gap-2.5 py-0.5">
-                <span className="text-[10px] text-txt-muted/70 shrink-0">
+                <span className="text-[11px] text-txt-muted shrink-0">
                   {formatSpan(r.SerialStart, r.SerialEnd)}
                 </span>
                 <span
-                  className={`text-xs font-medium text-txt-secondary ${
+                  className={`text-[13px] font-medium text-txt-secondary ${
                     field.mono ? "font-mono tracking-wide" : ""
                   }`}
                 >
                   {r.Value}
                 </span>
                 {r.Observations > 1 && (
-                  <span className="ml-auto text-[9px] font-mono text-txt-muted/35 tabular-nums shrink-0">
+                  <span className="ml-auto text-[10px] font-mono text-txt-muted/60 tabular-nums shrink-0">
                     &times;{r.Observations}
                   </span>
                 )}
               </div>
             ))
           ) : (
-            <p className="text-[11px] text-txt-muted/40 py-1 italic">
+            <p className="text-xs text-txt-muted/70 py-1 italic">
               No confirmed ranges.
             </p>
           )}
           {pendingCount > 0 && (
-            <div className="flex items-center gap-1.5 pt-0.5">
-              <span
-                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                style={{
-                  color: "#f59e0b",
-                  background: "#f59e0b12",
-                  border: "1px solid #f59e0b28",
-                }}
-              >
-                <Info className="w-2.5 h-2.5 shrink-0" />
-                {pendingCount} pending
-              </span>
-              <span className="text-[10px] text-txt-muted/40">
-                needs a matching VIN
-              </span>
+            <div className="flex flex-col gap-1 pt-0.5">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-md"
+                  style={{
+                    color: "#f59e0b",
+                    background: "#f59e0b12",
+                    border: "1px solid #f59e0b28",
+                  }}
+                >
+                  <Info className="w-2.5 h-2.5 shrink-0" />
+                  {pendingCount} unconfirmed
+                </span>
+                <span className="text-[11px] text-txt-muted">
+                  awaiting a 2nd matching VIN to confirm a range
+                </span>
+              </div>
+              {pendingList.map((p, i) => (
+                <div key={i} className="flex items-center gap-2.5">
+                  <span className="text-[11px] text-txt-muted shrink-0">
+                    #{padSerial(p.serial)}
+                  </span>
+                  <span
+                    className={`text-[13px] font-medium text-amber-500/90 ${
+                      field.mono ? "font-mono tracking-wide" : ""
+                    }`}
+                  >
+                    {p.value}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -324,9 +358,7 @@ export function ForkFieldRow({
 }
 
 export function BuildNumberSpecs({ vehicle, pageVin }) {
-  const { user } = useAuth();
   const qc = useQueryClient();
-  const feedsForkOnEdit = user?.isDNR || user?.isAdmin;
   const [open, setOpen] = useState(true);
   const [checkVin, setCheckVin] = useState(() =>
     (pageVin ?? "").trim().toUpperCase(),
@@ -359,16 +391,20 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
   const resolved = data?.resolved ?? {};
   const fields = data?.fields ?? {};
   const pending = data?.pending ?? {};
+  const proposed = data?.proposed ?? {};
   const serial = data?.serial;
   const hasSerial = serial != null;
 
-  const resolvedCount = FORK_FIELDS.filter(
-    (f) => resolved[f.key]?.Value || (fields[f.key]?.length ?? 0) > 0,
-  ).length;
-  const anyData = FORK_FIELDS.some(
-    (f) =>
-      resolved[f.key]?.Value || vehicle[f.key] || (fields[f.key]?.length ?? 0),
-  );
+  // A field carries something to show if it has a confirmed value, a verified sighting
+  // awaiting a match, or an unverified edit pending review.
+  const fieldHasData = (key) =>
+    !!resolved[key]?.Value ||
+    (fields[key]?.length ?? 0) > 0 ||
+    (pending[key]?.length ?? 0) > 0 ||
+    (proposed[key]?.length ?? 0) > 0;
+
+  const resolvedCount = FORK_FIELDS.filter((f) => fieldHasData(f.key)).length;
+  const anyData = FORK_FIELDS.some((f) => fieldHasData(f.key));
   const vinLen = checkVin.length;
   const vinComplete = vinLen === 17;
 
@@ -383,7 +419,7 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
           <GitBranch className="w-4 h-4 text-emerald-400" />
           Build-Number Specs
           {resolvedCount > 0 && (
-            <span className="ml-1.5 text-[10px] font-mono tabular-nums text-emerald-400/70">
+            <span className="ml-1.5 text-[11px] font-mono tabular-nums text-emerald-400/80">
               {resolvedCount}/{FORK_FIELDS.length}
             </span>
           )}
@@ -412,7 +448,7 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
                   )
                 }
                 placeholder="VIN for this unit (auto-resolves at 17 chars)…"
-                className={`w-full bg-bg-elevated border rounded-lg pl-8 pr-10 py-1.5 text-xs font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none transition-all ${
+                className={`w-full bg-bg-elevated border rounded-lg pl-8 pr-10 py-2 text-[13px] font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none transition-all ${
                   vinComplete
                     ? "border-emerald-500/40 focus:border-emerald-500/60"
                     : "border-border-subtle focus:border-accent/60"
@@ -433,7 +469,7 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
             {hasSerial ? (
               <div className="flex items-center gap-2">
                 <span
-                  className="inline-flex items-center gap-1.5 text-xs font-mono px-2 py-1 rounded-md"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-mono px-2 py-1 rounded-md"
                   style={{
                     color: "#34d399",
                     background: "#34d39912",
@@ -441,29 +477,29 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
                   }}
                 >
                   <span
-                    className="text-[9px] font-sans uppercase tracking-wider"
+                    className="text-[10px] font-sans uppercase tracking-wider"
                     style={{ color: "#34d39980" }}
                   >
                     Build
                   </span>
                   #{padSerial(serial)}
                 </span>
-                <span className="text-[10px] text-txt-muted/50">
+                <span className="text-[11px] text-txt-muted">
                   resolved for this VIN
                 </span>
               </div>
             ) : (
-              <p className="text-[10px] text-txt-muted/50 flex items-center gap-1">
-                <Info className="w-3 h-3 shrink-0 text-amber-500/60" />
+              <p className="text-[11px] text-txt-muted flex items-center gap-1.5">
+                <Info className="w-3 h-3 shrink-0 text-amber-500/70" />
                 Type a full 17-char VIN — values update automatically for that
                 build number.
               </p>
             )}
-            {vinComplete && !feedsForkOnEdit && (
-              <p className="text-[10px] text-amber-400/70 flex items-center gap-1">
+            {vinComplete && (
+              <p className="text-[11px] text-amber-400/80 flex items-center gap-1.5">
                 <Info className="w-3 h-3 shrink-0" />
-                Edits here update the spec immediately; the build-number range
-                applies after admin verification.
+                Values you enter are saved against this VIN and apply to the
+                build-number range once an admin verifies them.
               </p>
             )}
           </div>
@@ -487,24 +523,24 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
                     key={f.key}
                     field={f}
                     resolved={resolved[f.key]}
-                    columnVal={vehicle[f.key]}
                     ranges={fields[f.key]}
                     pending={pending[f.key]}
+                    proposed={proposed[f.key]}
+                    serial={serial}
                     activeVin={activeVin}
                     pageVin={pageVin}
                     history={vehicle.history ?? []}
-                    feedsForkOnEdit={feedsForkOnEdit}
                     onSaved={refetchAfterEdit}
                   />
                 ))}
               </div>
               {!anyData && (
                 <div className="py-6 text-center">
-                  <GitBranch className="w-6 h-6 text-txt-muted/15 mx-auto mb-2" />
-                  <p className="text-xs text-txt-muted/40">
+                  <GitBranch className="w-6 h-6 text-txt-muted/25 mx-auto mb-2" />
+                  <p className="text-[13px] text-txt-muted">
                     No build-number data yet
                   </p>
-                  <p className="text-[10px] text-txt-muted/25 mt-0.5">
+                  <p className="text-[11px] text-txt-muted/60 mt-0.5">
                     Add it from the DNR page.
                   </p>
                 </div>
@@ -513,11 +549,11 @@ export function BuildNumberSpecs({ vehicle, pageVin }) {
           )}
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 pt-2 border-t border-border-subtle/30">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 pt-2.5 border-t border-border-subtle/40">
             {Object.entries(FORK_CONFIDENCE).map(([k, c]) => (
               <span
                 key={k}
-                className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md"
                 style={{
                   color: c.color,
                   background: `${c.color}12`,

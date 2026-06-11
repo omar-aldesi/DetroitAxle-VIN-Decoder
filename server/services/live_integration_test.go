@@ -45,11 +45,6 @@ func TestLiveGMDecode(t *testing.T) {
 	if v.Cylinders != "4" || v.DisplacementL != "2.4" {
 		t.Errorf("expected engine cyl=4 disp=2.4 from GM, got cyl=%q disp=%q", v.Cylinders, v.DisplacementL)
 	}
-	// Per-VIN / non-VDS fields must stay empty (speeds, brake, gvwr, steering).
-	if v.Speeds != 0 || v.BrakeCode != "" || v.GVWR != "" || v.SteeringType != "" {
-		t.Errorf("per-unit field leaked into persisted record: speeds=%d brake=%q gvwr=%q steer=%q",
-			v.Speeds, v.BrakeCode, v.GVWR, v.SteeringType)
-	}
 
 	// Upfitter-built Chevrolet — GM Parts Giant has no data → ErrGMNoData.
 	_, err = FetchGMAttributes("54DBDJ1B5LS483704")
@@ -62,7 +57,7 @@ func TestLiveGMDecode(t *testing.T) {
 // VINs, including the originally-failing incomplete chassis cab. Guarded behind
 // LIVE_TEST=1 so it never runs in normal CI.
 //
-//   LIVE_TEST=1 AUTO_DEV_TOKEN=... go test ./services/ -run TestLiveDecode -v
+//	LIVE_TEST=1 AUTO_DEV_TOKEN=... go test ./services/ -run TestLiveDecode -v
 func TestLiveDecode(t *testing.T) {
 	if os.Getenv("LIVE_TEST") != "1" {
 		t.Skip("set LIVE_TEST=1 to run live API integration test")

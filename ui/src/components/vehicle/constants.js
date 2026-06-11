@@ -85,7 +85,7 @@ export const FORK_CONFIDENCE = {
   observed: {
     label: "Confirmed",
     color: "#10b981",
-    desc: "Seen on two or more VINs across this range",
+    desc: "Bracketed by two or more confirmed VINs in this range",
   },
   manual: {
     label: "Set by team",

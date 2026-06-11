@@ -220,21 +220,21 @@ export default function VehiclePage() {
           <div>
             {/* Expand / Collapse all bar */}
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-txt-muted uppercase tracking-widest">
+              <span className="text-[13px] font-semibold text-txt-secondary uppercase tracking-wider">
                 Specifications
               </span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setExpandAll(true)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-txt-muted hover:text-txt-primary rounded-lg hover:bg-bg-elevated transition-all"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-txt-muted hover:text-txt-primary rounded-lg hover:bg-bg-elevated transition-all"
                 >
-                  <ChevronsUpDown className="w-3 h-3" />
+                  <ChevronsUpDown className="w-3.5 h-3.5" />
                   Expand all
                 </button>
                 <span className="text-border opacity-60 select-none">·</span>
                 <button
                   onClick={() => setExpandAll(false)}
-                  className="px-2 py-1 text-xs text-txt-muted hover:text-txt-primary rounded-lg hover:bg-bg-elevated transition-all"
+                  className="px-2.5 py-1.5 text-xs font-medium text-txt-muted hover:text-txt-primary rounded-lg hover:bg-bg-elevated transition-all"
                 >
                   Collapse all
                 </button>

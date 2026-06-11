@@ -443,6 +443,49 @@ func TestFork_StalePendingAbsorbed(t *testing.T) {
 	}
 }
 
+// TestFork_AllConfidenceTiers documents and pins how confidenceFor assigns each of the
+// four tiers the UI shows: Confirmed (observed), Set by team (manual), Assumed (assumed),
+// Estimated (extrapolated). Precedence is manual → extrapolated → observed → assumed.
+func TestFork_AllConfidenceTiers(t *testing.T) {
+	e := NewForkEngine(newMemStore("brake_code"))
+
+	// Two agreeing sightings form [1..100], evidence at #1 and #100 (obs=2).
+	rp(t, e, 1, "JP9")
+	rp(t, e, 100, "JP9")
+
+	// CONFIRMED (observed): any serial bracketed by the two sightings, obs>=2. #50 was
+	// never seen itself — it's interpolated between #1 and #100 — yet it reads Confirmed.
+	if m, _ := e.Resolve(bk, 50, []string{"brake_code"}); m["brake_code"].Confidence != ConfObserved {
+		t.Fatalf("#50 = %s, want observed (Confirmed)", m["brake_code"].Confidence)
+	}
+
+	// A manual span [50..100]=JP6 trims [1..100]: left remnant [1..49] keeps only the
+	// evidence at #1 (min=max=1, obs=1); the manual range owns [50..100].
+	if _, err := e.RecordRange(RangeInput{
+		BuildKey: bk, SerialStart: 50, SerialEnd: ptr(100), FieldKey: "brake_code",
+		Value: "JP6", Source: "dnr", Verified: true,
+	}); err != nil {
+		t.Fatalf("RecordRange: %v", err)
+	}
+
+	// SET BY TEAM (manual): anything inside the human-entered span, regardless of evidence.
+	if m, _ := e.Resolve(bk, 75, []string{"brake_code"}); m["brake_code"].Confidence != ConfManual {
+		t.Fatalf("#75 = %s, want manual (Set by team)", m["brake_code"].Confidence)
+	}
+
+	// ASSUMED (assumed): inside the remnant's seen bracket but thin evidence (obs<2). #1 is
+	// the single sighting the remnant still owns.
+	if m, _ := e.Resolve(bk, 1, []string{"brake_code"}); m["brake_code"].Confidence != ConfAssumed {
+		t.Fatalf("#1 = %s, want assumed (Assumed)", m["brake_code"].Confidence)
+	}
+
+	// ESTIMATED (extrapolated): covered by the remnant range but beyond any serial actually
+	// seen (#25 > the remnant's SerialMaxSeen of 1) — pure extrapolation.
+	if m, _ := e.Resolve(bk, 25, []string{"brake_code"}); m["brake_code"].Confidence != ConfExtrapolated {
+		t.Fatalf("#25 = %s, want extrapolated (Estimated)", m["brake_code"].Confidence)
+	}
+}
+
 // Remnants of a trim/carve keep only the evidence inside them; a remnant with no real
 // evidence must not resolve as "observed".
 func TestFork_RemnantEvidenceHonest(t *testing.T) {

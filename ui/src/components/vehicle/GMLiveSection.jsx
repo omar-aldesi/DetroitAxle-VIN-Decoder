@@ -34,7 +34,7 @@ function GMNativeData({ data }) {
   const SummaryRow = ({ label, value }) => (
     <div className="spec-row items-start">
       <span className="spec-label pt-px shrink-0">{label}</span>
-      <span className="text-xs text-txt-primary font-medium text-right leading-snug">
+      <span className="text-[13px] text-txt-primary font-medium text-right leading-snug">
         {value}
       </span>
     </div>
@@ -45,7 +45,7 @@ function GMNativeData({ data }) {
       {/* Summary */}
       {(major.length > 0 || info.length > 0) && (
         <div>
-          <p className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider mb-1.5 pb-1 border-b border-border-subtle/40">
+          <p className="text-[11px] font-semibold text-txt-muted uppercase tracking-wider mb-1.5 pb-1 border-b border-border-subtle/40">
             Summary
           </p>
           {major.map((x) => (
@@ -69,10 +69,10 @@ function GMNativeData({ data }) {
       {rpoRows.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-border-subtle/40">
-            <p className="text-[10px] font-semibold text-txt-muted uppercase tracking-wider">
+            <p className="text-[11px] font-semibold text-txt-muted uppercase tracking-wider">
               Build Options &amp; RPO Codes
             </p>
-            <span className="text-[10px] font-mono text-txt-muted/40 tabular-nums">
+            <span className="text-[11px] font-mono text-txt-muted/70 tabular-nums">
               {rpoRows.length}
             </span>
           </div>
@@ -80,13 +80,13 @@ function GMNativeData({ data }) {
             {rpoRows.map((r, i) => (
               <div key={i} className="flex items-start gap-2 py-1">
                 {r.code ? (
-                  <span className="shrink-0 font-mono text-[10px] font-semibold text-accent bg-accent/10 border border-accent/20 rounded px-1.5 py-0.5 leading-none mt-px tabular-nums">
+                  <span className="shrink-0 font-mono text-[11px] font-semibold text-accent bg-accent/10 border border-accent/20 rounded px-1.5 py-0.5 leading-none mt-px tabular-nums">
                     {r.code}
                   </span>
                 ) : (
                   <span className="shrink-0 w-[38px]" />
                 )}
-                <span className="text-xs text-txt-secondary leading-snug">
+                <span className="text-[13px] text-txt-secondary leading-snug">
                   {r.text || "—"}
                 </span>
               </div>
@@ -167,7 +167,7 @@ export function GMLiveSection({ vehicle, activeVin }) {
         <span className="section-title">
           <Car className="w-4 h-4 text-blue-400" />
           GM Build Options
-          <span className="ml-1.5 text-[10px] font-mono text-txt-muted/40 tabular-nums">
+          <span className="ml-1.5 text-[11px] font-mono text-txt-muted/70 tabular-nums">
             live
           </span>
         </span>
@@ -194,7 +194,7 @@ export function GMLiveSection({ vehicle, activeVin }) {
               }
               onKeyDown={(e) => e.key === "Enter" && doFetch()}
               placeholder="Enter full VIN…"
-              className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-1.5 text-xs font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none focus:border-accent/60 transition-all"
+              className="flex-1 bg-bg-elevated border border-border-subtle rounded-lg px-3 py-2 text-[13px] font-mono text-txt-primary placeholder:font-sans placeholder:text-txt-muted focus:outline-none focus:border-accent/60 transition-all"
             />
             <button
               onClick={() => doFetch()}
@@ -210,7 +210,7 @@ export function GMLiveSection({ vehicle, activeVin }) {
             </button>
           </div>
 
-          <p className="text-[10px] text-txt-muted/60 mb-3 leading-relaxed">
+          <p className="text-[11px] text-txt-muted mb-3 leading-relaxed">
             RPO codes are specific to each individual VIN off the assembly line
             — this data is fetched live and is not saved. Two vehicles of the
             same model may carry different options.

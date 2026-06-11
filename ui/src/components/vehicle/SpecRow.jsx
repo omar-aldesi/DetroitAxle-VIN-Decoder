@@ -101,7 +101,7 @@ export function SpecRow({ label, value, col, vin, history }) {
           <span
             title="This value has been verified and locked"
             className="flex items-center gap-1 px-1.5 py-0.5 rounded-md
-              bg-success/10 border border-success/25 text-success text-[10px] font-semibold"
+              bg-success/10 border border-success/25 text-success text-[11px] font-semibold"
           >
             <ShieldCheck className="w-3 h-3" />
             Verified
@@ -112,7 +112,7 @@ export function SpecRow({ label, value, col, vin, history }) {
           <span
             title="This source has been marked as trusted"
             className="flex items-center gap-1 px-1.5 py-0.5 rounded-md
-              bg-sky-500/10 border border-sky-500/25 text-sky-500 text-[10px] font-semibold"
+              bg-sky-500/10 border border-sky-500/25 text-sky-500 text-[11px] font-semibold"
           >
             <ShieldCheck className="w-3 h-3" />
             Trusted

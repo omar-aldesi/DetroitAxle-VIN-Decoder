@@ -21,10 +21,12 @@ html.dark {
     --c-border: 42 65 94; /* #2a415e */
     --c-border-strong: 58 87 118; /* #3a5776 */
 
-    /* Text */
-    --c-txt-primary: 240 246 252; /* #f0f6fc */
-    --c-txt-secondary: 139 148 158; /* #8b949e */
-    --c-txt-muted: 80 101 128; /* #506580 */
+    /* Text — three legible tiers on the navy base (primary → secondary → muted).
+       Muted was previously too dim (#506580, ~2.2:1) which made labels hard to
+       read; it's now lifted to a comfortable mid-contrast value. */
+    --c-txt-primary: 241 246 252; /* #f1f6fc */
+    --c-txt-secondary: 170 181 196; /* #aab5c4 */
+    --c-txt-muted: 126 141 167; /* #7e8da7 */
 
     /* Shadows */
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 20px rgba(0, 0, 0, 0.35);
@@ -46,10 +48,11 @@ html.light {
     --c-border: 196 209 224; /* #c4d1e0 */
     --c-border-strong: 148 163 184; /* #94a3b8 */
 
-    /* Text */
+    /* Text — muted darkened from #94a3b8 (~2.7:1 on the light base) to #64748b
+       (~4.6:1) so labels are readable; primary/secondary unchanged. */
     --c-txt-primary: 30 41 59; /* #1e293b */
     --c-txt-secondary: 71 85 105; /* #475569 */
-    --c-txt-muted: 148 163 184; /* #94a3b8 */
+    --c-txt-muted: 100 116 139; /* #64748b */
 
     /* Shadows */
     --shadow-card:
@@ -119,20 +122,20 @@ html.light {
 ══════════════════════════════════════════════════════════════════════ */
 @layer components {
     .spec-row {
-        @apply flex items-center justify-between py-2.5 border-b border-border-subtle last:border-0 gap-3;
+        @apply flex items-center justify-between py-3 border-b border-border-subtle last:border-0 gap-3;
     }
     .spec-label {
-        @apply text-xs font-medium text-txt-muted shrink-0;
+        @apply text-[13px] font-medium text-txt-secondary shrink-0;
     }
     .spec-value {
-        @apply text-sm text-txt-primary font-medium text-right truncate;
+        @apply text-[15px] text-txt-primary font-semibold text-right truncate;
     }
 
     .section-card {
         @apply bg-bg-card border border-border-subtle rounded-2xl p-5 shadow-card;
     }
     .section-title {
-        @apply text-xs font-semibold uppercase tracking-widest text-txt-muted flex items-center gap-2;
+        @apply text-[13px] font-semibold uppercase tracking-wider text-txt-secondary flex items-center gap-2;
     }
 
     .input-base {

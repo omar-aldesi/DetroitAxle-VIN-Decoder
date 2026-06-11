@@ -4,7 +4,8 @@ import client from "./client";
    Build-key-tier facts are shared; these fields vary by individual VIN (serial). */
 
 /* GET /api/fork/:vin  (17-char VIN or 10-char build key)
-   → { build_key, fork_fields, fields:{field:[ranges]}, pending:{field:[serials]},
+   → { build_key, fork_fields, fields:{field:[ranges]},
+       pending:{field:[{serial, value}]},  // verified sightings awaiting a 2nd matching VIN
        serial?, resolved?:{field:{value, confidence, observations, ...}} } */
 export const getForkData = (vinOrKey) => client.get(`/fork/${vinOrKey}`);
 

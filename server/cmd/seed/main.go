@@ -20,7 +20,7 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	db, err := config.InitDB()
+	db, err := config.InitTestDB()
 	if err != nil {
 		log.Fatalf("DB: %v", err)
 	}

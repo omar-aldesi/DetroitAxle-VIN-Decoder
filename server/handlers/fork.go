@@ -79,11 +79,20 @@ func (h *ForkHandler) GetForkData(c *gin.Context) {
 		return
 	}
 
+	// Unverified per-VIN edits entered for this build key but not yet verified into the
+	// engine — so the vehicle page can show them as "pending review".
+	proposed, err := services.ProposedEditsFor(h.DB, veh.ID)
+	if err != nil {
+		helpers.Fail(c, http.StatusInternalServerError, "failed to load proposed edits")
+		return
+	}
+
 	resp := gin.H{
 		"build_key":   buildKey,
 		"fork_fields": keys,
-		"fields":      fields,  // field -> [ranges]
-		"pending":     pending, // field -> [serials] still awaiting a second sighting
+		"fields":      fields,   // field -> [ranges]
+		"pending":     pending,  // field -> [{serial,value}] verified, awaiting a 2nd sighting
+		"proposed":    proposed, // field -> [{serial,value}] unverified edits awaiting review
 	}
 
 	if serialPtr != nil {

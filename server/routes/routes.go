@@ -4,23 +4,27 @@ import (
 	"main/auth"
 	"main/handlers"
 	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 )
 
 func Setup(r *gin.Engine, db *gorm.DB) {
+	_ = godotenv.Load()
+
 	vehicleHandler := &handlers.VehicleHandler{DB: db}
 	authHandler := &handlers.AuthHandler{DB: db}
 	notesHandler := &handlers.NotesHandler{DB: db}
 	categoriesHandler := &handlers.CategoryHandler{DB: db}
 	adminHandler := &handlers.AdminHandler{DB: db}
 	historyHandler := &handlers.HistoryHandler{DB: db}
-	dnrHandler    := &handlers.DNRHandler{DB: db}
-	partsHandler  := &handlers.PartsHandler{DB: db}
+	dnrHandler := &handlers.DNRHandler{DB: db}
+	partsHandler := &handlers.PartsHandler{DB: db}
 	importHandler := &handlers.ImportHandler{DB: db}
-	gmHandler     := &handlers.GMHandler{DB: db}
-	forkHandler   := &handlers.ForkHandler{DB: db}
+	gmHandler := &handlers.GMHandler{DB: db}
+	forkHandler := &handlers.ForkHandler{DB: db}
 
 	base := r.Group("/api")
 
@@ -113,22 +117,30 @@ func Setup(r *gin.Engine, db *gorm.DB) {
 	// Parts catalog — read: any authenticated user; write: handled inside handler
 	parts := base.Group("/parts", auth.RequireAuth(db))
 	{
-		parts.GET("/",                    partsHandler.ListParts)
-		parts.GET("/categories",          partsHandler.ListCategories)
-		parts.GET("/by-vehicle/:vin",     partsHandler.GetCompatibleParts)
-		parts.GET("/:id",                 partsHandler.GetPart)
-		parts.POST("/",                   partsHandler.CreatePart)
-		parts.PATCH("/:id",               partsHandler.UpdatePart)
-		parts.DELETE("/:id",              partsHandler.DeletePart)
-		parts.POST("/:id/rules",          partsHandler.AddRule)
-		parts.PATCH("/:id/rules/:rule_id",partsHandler.UpdateRule)
-		parts.DELETE("/:id/rules/:rule_id",partsHandler.DeleteRule)
-		parts.GET("/:id/vehicles",         partsHandler.GetCompatibleVehicles)
-		parts.POST("/:id/clone",           partsHandler.ClonePart)
+		parts.GET("/", partsHandler.ListParts)
+		parts.GET("/categories", partsHandler.ListCategories)
+		parts.GET("/by-vehicle/:vin", partsHandler.GetCompatibleParts)
+		parts.GET("/:id", partsHandler.GetPart)
+		parts.POST("/", partsHandler.CreatePart)
+		parts.PATCH("/:id", partsHandler.UpdatePart)
+		parts.DELETE("/:id", partsHandler.DeletePart)
+		parts.POST("/:id/rules", partsHandler.AddRule)
+		parts.PATCH("/:id/rules/:rule_id", partsHandler.UpdateRule)
+		parts.DELETE("/:id/rules/:rule_id", partsHandler.DeleteRule)
+		parts.GET("/:id/vehicles", partsHandler.GetCompatibleVehicles)
+		parts.POST("/:id/clone", partsHandler.ClonePart)
 	}
 
 	// Serve frontend
-	const frontendDir = "/home/developer/frontend"
+	_ = godotenv.Load()
+	debug := false
+	if val := os.Getenv("DEBUG"); val != "" {
+		debug, _ = strconv.ParseBool(val)
+	}
+	frontendDir := "/home/developer/frontend"
+	if debug {
+		frontendDir = "../ui"
+	}
 	r.Static("/assets", frontendDir+"/assets")
 	r.StaticFile("/", frontendDir+"/index.html")
 	r.NoRoute(func(c *gin.Context) {

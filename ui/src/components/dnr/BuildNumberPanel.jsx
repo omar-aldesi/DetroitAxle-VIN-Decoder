@@ -557,7 +557,7 @@ export function BuildNumberPanel({ vehicle, open, onToggle }) {
                         </div>
                       )}
 
-                      {/* Pending serials */}
+                      {/* Pending sightings — verified single VINs awaiting a match */}
                       {pend.length > 0 && (
                         <div
                           className={`flex items-center gap-1.5 px-3 py-2 ${rs.length > 0 ? "border-t border-border-subtle/40" : ""}`}
@@ -569,7 +569,10 @@ export function BuildNumberPanel({ vehicle, open, onToggle }) {
                               : `${pend.length} pending`}
                             :{" "}
                             {pend
-                              .map((s) => `#${s.toLocaleString()}`)
+                              .map(
+                                (p) =>
+                                  `#${Number(p.serial).toLocaleString()} (${p.value})`,
+                              )
                               .join(", ")}
                           </span>
                         </div>
